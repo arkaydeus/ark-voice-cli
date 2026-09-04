@@ -11,7 +11,8 @@ enum VoiceEngineError: LocalizedError {
   case unsupportedAudioFormat(String)
   case emptyText
   case invalidTextEncoding(String)
-  case outputMustBeWAV(String)
+  case unsupportedOutputFormat(String)
+  case audioEncodingFailed(String)
   case missingMetalLibrary
   case tokenizerUnavailable(String)
   case standardOutputRedirectionFailed
@@ -26,8 +27,10 @@ enum VoiceEngineError: LocalizedError {
       "Text input is empty."
     case .invalidTextEncoding(let source):
       "Text input is not valid UTF-8: \(source)"
-    case .outputMustBeWAV(let path):
-      "TTS output must be a .wav file: \(path)"
+    case .unsupportedOutputFormat(let path):
+      "Unsupported TTS output format: \(path). Supported outputs: \(AudioOutputFormat.supportedExtensionsDescription)."
+    case .audioEncodingFailed(let details):
+      "Could not encode audio output: \(details)"
     case .missingMetalLibrary:
       "MLX's Metal shader library is missing. Build with './Scripts/build-release.sh' and keep mlx.metallib beside the ark-voice executable."
     case .tokenizerUnavailable(let details):
@@ -76,9 +79,7 @@ enum VoiceEngine {
     guard !text.isEmpty else { throw VoiceEngineError.emptyText }
 
     let output = resolvedURL(outputPath)
-    guard output.pathExtension.lowercased() == "wav" else {
-      throw VoiceEngineError.outputMustBeWAV(output.path)
-    }
+    let outputFormat = try ttsOutputFormat(for: output)
     try requireMLXRuntime()
 
     let referenceAudio: MLXArray?
@@ -127,12 +128,20 @@ enum VoiceEngine {
     }
 
     try createParentDirectory(for: output)
-    try AudioUtils.writeWavFile(
+    try AudioFileWriter.write(
       samples: audioSamples,
       sampleRate: sampleRate,
-      fileURL: output
+      to: output,
+      format: outputFormat
     )
     print(output.path)
+  }
+
+  static func ttsOutputFormat(for output: URL) throws -> AudioOutputFormat {
+    guard let format = AudioOutputFormat(url: output) else {
+      throw VoiceEngineError.unsupportedOutputFormat(output.path)
+    }
+    return format
   }
 
   static func createVoice(name: String, referencePath: String) async throws {

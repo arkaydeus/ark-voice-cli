@@ -56,11 +56,22 @@ ark-voice stt voice-note.m4a --output transcript.txt
 ark-voice stt interview.mp4 -o interview.txt
 ```
 
-Synthesize speech with Chatterbox's included default voice:
+Synthesize speech with Chatterbox's included default voice. WAV remains the default output:
 
 ```sh
 ark-voice tts "Hello from my Mac" --output hello.wav
 ```
+
+For smaller output, select AAC-LC in an M4A container or ADTS-framed AAC by using the corresponding
+extension:
+
+```sh
+ark-voice tts "Hello from my Mac" --output hello.m4a
+ark-voice tts "Hello from my Mac" --output hello.aac
+```
+
+Both AAC forms are mono at Chatterbox's native 24 kHz sample rate and use a 48 kbps target bitrate.
+This command writes a completed file; it does not provide a network-streaming interface.
 
 Use `--` before inline text that starts with a hyphen:
 
@@ -76,7 +87,7 @@ printf 'Hello there' | ark-voice tts --file - -o hello.wav
 ```
 
 Long text is automatically split at sentence or word boundaries into chunks of at most 300
-characters. Chunks are synthesized in sequence and joined with a short pause in the output WAV.
+characters. Chunks are synthesized in sequence and joined with a short pause in the output audio.
 
 Use a reference recording for zero-shot voice cloning:
 
@@ -114,8 +125,9 @@ You can download only one side of the stack with `ark-voice download stt` or `ar
 
 - The tool is intentionally English-only and has no language-selection option.
 - Input decoding uses AVFoundation. MP4 files must contain an audio track.
-- TTS output is mono WAV at Chatterbox's native 24 kHz sample rate.
-- Successful TTS writes only the output WAV path to stdout. Model progress and diagnostics go to stderr.
+- TTS output can be Float32 WAV, AAC-LC in M4A, or ADTS AAC. All are mono at Chatterbox's native
+  24 kHz sample rate; WAV is the default.
+- Successful TTS writes only the output audio path to stdout. Model progress and diagnostics go to stderr.
 - Successful voice creation writes only the saved profile path to stdout.
 - Set `HF_TOKEN` if Hugging Face requires authentication in your environment.
 

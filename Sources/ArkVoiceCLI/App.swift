@@ -9,8 +9,8 @@ private let usage = """
   USAGE
     ark-voice download [all|stt|tts]
     ark-voice stt <audio> [--output transcript.txt]
-    ark-voice tts [--] <text> [--output speech.wav] [--reference voice.wav|--voice name]
-    ark-voice tts --file <text-file|-> [--output speech.wav] [--reference voice.wav|--voice name]
+    ark-voice tts [--] <text> [--output speech.{wav,m4a,aac}] [--reference voice.wav|--voice name]
+    ark-voice tts --file <text-file|-> [--output speech.{wav,m4a,aac}] [--reference voice.wav|--voice name]
     ark-voice voice create <name> <reference-audio>
     ark-voice voices
     ark-voice models
@@ -18,7 +18,7 @@ private let usage = """
   COMMANDS
     download    Download models to ~/.ark-voice-cli (both models by default)
     stt         Transcribe English audio; accepts wav, aac, m4a, and mp4
-    tts         Synthesize English speech to a WAV file
+    tts         Synthesize English speech to WAV, M4A, or ADTS AAC
     voice       Create a reusable voice profile from reference audio
     voices      List saved voice profiles
     models      Show the configured models and local download status

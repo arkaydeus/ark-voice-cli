@@ -58,7 +58,7 @@ import Testing
     #expect(error?.localizedDescription.contains("S3 tokenizer could not be loaded") == true)
   }
 
-  @Test func synthesisRejectsEmptyTextAndNonWAVOutputBeforeInference() async {
+  @Test func synthesisRejectsEmptyTextAndUnsupportedOutputBeforeInference() async {
     let emptyError = await #expect(throws: VoiceEngineError.self) {
       try await VoiceEngine.speak(
         textSource: .literal(" \n "),
@@ -75,7 +75,22 @@ import Testing
         referencePath: nil
       )
     }
-    #expect(outputError?.localizedDescription.contains("must be a .wav file") == true)
+    #expect(outputError?.localizedDescription.contains("Supported outputs: wav, m4a, aac") == true)
+  }
+
+  @Test func ttsOutputFormatAcceptsEverySupportedExtension() throws {
+    #expect(
+      try VoiceEngine.ttsOutputFormat(for: URL(fileURLWithPath: "/tmp/speech.wav")) == .wav
+    )
+    #expect(
+      try VoiceEngine.ttsOutputFormat(for: URL(fileURLWithPath: "/tmp/speech.M4A")) == .m4a
+    )
+    #expect(
+      try VoiceEngine.ttsOutputFormat(for: URL(fileURLWithPath: "/tmp/speech.AAC")) == .aac
+    )
+    #expect(throws: VoiceEngineError.self) {
+      try VoiceEngine.ttsOutputFormat(for: URL(fileURLWithPath: "/tmp/speech.mp3"))
+    }
   }
 
   @Test func textFileReadingRejectsMissingAndMalformedFiles() throws {
