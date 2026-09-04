@@ -11,10 +11,7 @@ let package = Package(
     .executable(name: "ark-voice", targets: ["ArkVoiceCLI"])
   ],
   dependencies: [
-    .package(
-      url: "https://github.com/Blaizzy/mlx-audio-swift.git",
-      revision: "bf14ae0c26e4e85553dd989571cae29d70fa6735"
-    ),
+    .package(path: "Vendor/mlx-audio-swift"),
     .package(
       url: "https://github.com/huggingface/swift-huggingface.git",
       exact: "0.8.1"
@@ -44,6 +41,8 @@ let package = Package(
       name: "ArkVoiceCLITests",
       dependencies: [
         "ArkVoiceCLI",
+        .product(name: "MLX", package: "mlx-swift"),
+        .product(name: "MLXAudioTTS", package: "mlx-audio-swift"),
         .product(name: "Testing", package: "swift-testing"),
       ]
     ),

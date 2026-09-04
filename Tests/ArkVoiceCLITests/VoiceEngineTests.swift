@@ -12,6 +12,44 @@ import Testing
     #expect(error?.localizedDescription == "Text input is not valid UTF-8: stdin")
   }
 
+  @Test func shortTTSInputRemainsOneChunk() {
+    #expect(
+      VoiceEngine.chunkText("  Hello,\nworld.  This is a test. ")
+        == ["Hello, world. This is a test."]
+    )
+  }
+
+  @Test func longTTSInputUsesSentenceBoundariesAndHonorsLimit() {
+    let text = "One short sentence. Two is also short! Is three short? Four finishes."
+    let chunks = VoiceEngine.chunkText(text, maximumCharacters: 35)
+
+    #expect(
+      chunks == ["One short sentence.", "Two is also short! Is three short?", "Four finishes."]
+    )
+    #expect(chunks.allSatisfy { $0.count <= 35 })
+    #expect(chunks.joined(separator: " ") == text)
+  }
+
+  @Test func oversizedSentencesSplitAtWordsAndOversizedWordsSplitExactly() {
+    let sentence = "alpha beta gamma delta epsilon zeta eta theta."
+    let sentenceChunks = VoiceEngine.chunkText(sentence, maximumCharacters: 18)
+    #expect(sentenceChunks.allSatisfy { $0.count <= 18 })
+    #expect(sentenceChunks.joined(separator: " ") == sentence)
+
+    let longWord = "abcdefghijklmnopqrstuvwxyz"
+    let wordChunks = VoiceEngine.chunkText(longWord, maximumCharacters: 10)
+    #expect(wordChunks == ["abcdefghij", "klmnopqrst", "uvwxyz"])
+  }
+
+  @Test func oversizedSentencesPreferCommaBoundaries() {
+    let text = "Alpha beta gamma, delta epsilon zeta, eta theta."
+    let chunks = VoiceEngine.chunkText(text, maximumCharacters: 20)
+
+    #expect(chunks == ["Alpha beta gamma,", "delta epsilon zeta,", "eta theta."])
+    #expect(chunks.allSatisfy { $0.count <= 20 })
+    #expect(chunks.joined(separator: " ") == text)
+  }
+
   @Test func missingS3TokenizerFailsInsteadOfFallingBack() {
     let directory = temporaryDirectory()
     let error = #expect(throws: VoiceEngineError.self) {

@@ -9,14 +9,18 @@ private let usage = """
   USAGE
     ark-voice download [all|stt|tts]
     ark-voice stt <audio> [--output transcript.txt]
-    ark-voice tts [--] <text> [--output speech.wav] [--reference voice.wav]
-    ark-voice tts --file <text-file|-> [--output speech.wav] [--reference voice.wav]
+    ark-voice tts [--] <text> [--output speech.wav] [--reference voice.wav|--voice name]
+    ark-voice tts --file <text-file|-> [--output speech.wav] [--reference voice.wav|--voice name]
+    ark-voice voice create <name> <reference-audio>
+    ark-voice voices
     ark-voice models
 
   COMMANDS
     download    Download models to ~/.ark-voice-cli (both models by default)
     stt         Transcribe English audio; accepts wav, aac, m4a, and mp4
     tts         Synthesize English speech to a WAV file
+    voice       Create a reusable voice profile from reference audio
+    voices      List saved voice profiles
     models      Show the configured models and local download status
 
   ALIASES
@@ -34,6 +38,8 @@ private let usage = """
     ark-voice tts -- "-5 degrees outside" -o weather.wav
     printf 'Read this aloud' | ark-voice tts --file - -o stdin.wav
     ark-voice tts "Cloned voice" --reference speaker.aac -o clone.wav
+    ark-voice voice create narrator speaker.aac
+    ark-voice tts "Cached voice" --voice narrator -o cached.wav
   """
 
 @main
@@ -66,6 +72,17 @@ enum ArkVoiceApp {
         print("\(model.title) [\(status)]")
         print("  \(model.repository) — \(model.purpose)")
       }
+    case .voices:
+      let names = try VoiceStore.names()
+      if names.isEmpty {
+        print("No saved voices. Create one with 'ark-voice voice create <name> <audio>'.")
+      } else {
+        for name in names {
+          print(name)
+        }
+      }
+    case .createVoice(let name, let reference):
+      try await VoiceEngine.createVoice(name: name, referencePath: reference)
     case .download(let selection):
       let models = ModelStore.selected(selection)
       print("Downloading to \(ModelStore.root.path)")
@@ -73,8 +90,13 @@ enum ArkVoiceApp {
       print("Download complete.")
     case .transcribe(let input, let output):
       try await VoiceEngine.transcribe(inputPath: input, outputPath: output)
-    case .speak(let source, let output, let reference):
-      try await VoiceEngine.speak(textSource: source, outputPath: output, referencePath: reference)
+    case .speak(let source, let output, let reference, let voice):
+      try await VoiceEngine.speak(
+        textSource: source,
+        outputPath: output,
+        referencePath: reference,
+        voiceName: voice
+      )
     }
   }
 }

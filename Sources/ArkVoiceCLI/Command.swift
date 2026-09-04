@@ -3,7 +3,9 @@ import Foundation
 enum Command: Equatable {
   case download(ModelSelection)
   case transcribe(input: String, output: String?)
-  case speak(text: TextSource, output: String, reference: String?)
+  case speak(text: TextSource, output: String, reference: String?, voice: String?)
+  case createVoice(name: String, reference: String)
+  case voices
   case models
   case help
   case version
@@ -44,6 +46,11 @@ enum CLIParser {
     case "models":
       try requireNoArguments(rest, command: "models")
       return .models
+    case "voices":
+      try requireNoArguments(rest, command: "voices")
+      return .voices
+    case "voice":
+      return try parseVoice(rest)
     case "download":
       return try parseDownload(rest)
     case "stt", "transcribe":
@@ -104,6 +111,7 @@ enum CLIParser {
     var textFile: String?
     var output: String?
     var reference: String?
+    var voice: String?
     var index = 0
 
     while index < arguments.count {
@@ -136,6 +144,15 @@ enum CLIParser {
           throw CLIParseError.message("--reference may only be supplied once.")
         }
         reference = arguments[index]
+      case "--voice", "-v":
+        index += 1
+        guard index < arguments.count else {
+          throw CLIParseError.message("--voice requires a saved voice name.")
+        }
+        guard voice == nil else {
+          throw CLIParseError.message("--voice may only be supplied once.")
+        }
+        voice = arguments[index]
       case "--":
         index += 1
         guard index < arguments.count else {
@@ -163,6 +180,9 @@ enum CLIParser {
     guard text == nil || textFile == nil else {
       throw CLIParseError.message("Pass either inline text or --file, not both.")
     }
+    guard reference == nil || voice == nil else {
+      throw CLIParseError.message("Pass either --reference or --voice, not both.")
+    }
 
     let source: TextSource
     if let text {
@@ -174,7 +194,19 @@ enum CLIParser {
         "Usage: ark-voice tts <text> [--output speech.wav] [--reference voice.wav]")
     }
 
-    return .speak(text: source, output: output ?? "speech.wav", reference: reference)
+    return .speak(
+      text: source,
+      output: output ?? "speech.wav",
+      reference: reference,
+      voice: voice
+    )
+  }
+
+  private static func parseVoice(_ arguments: [String]) throws -> Command {
+    guard arguments.count == 3, arguments[0] == "create" else {
+      throw CLIParseError.message("Usage: ark-voice voice create <name> <reference-audio>")
+    }
+    return .createVoice(name: arguments[1], reference: arguments[2])
   }
 
   private static func requireNoArguments(_ arguments: [String], command: String) throws {

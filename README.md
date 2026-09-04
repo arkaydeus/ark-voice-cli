@@ -75,6 +75,9 @@ ark-voice tts --file article.txt -o article.wav
 printf 'Hello there' | ark-voice tts --file - -o hello.wav
 ```
 
+Long text is automatically split at sentence or word boundaries into chunks of at most 300
+characters. Chunks are synthesized in sequence and joined with a short pause in the output WAV.
+
 Use a reference recording for zero-shot voice cloning:
 
 ```sh
@@ -84,6 +87,20 @@ ark-voice tts "This uses the reference voice" \
 ```
 
 Only clone voices you have permission to use.
+
+Create a reusable named voice profile so future generations do not need to decode or process the
+reference recording again:
+
+```sh
+ark-voice voice create narrator speaker.m4a
+ark-voice tts --voice narrator --file article.txt -o narrated.wav
+ark-voice voices
+```
+
+Voice profiles are stored locally under `~/.ark-voice-cli/voices` as safetensors files. A profile
+contains speaker-conditioning data derived from the recording, so protect and share it as carefully
+as the original voice sample. Voice names may contain letters, numbers, hyphens, and underscores.
+Creating a profile never overwrites an existing voice with the same name.
 
 Check model locations and status:
 
@@ -99,6 +116,7 @@ You can download only one side of the stack with `ark-voice download stt` or `ar
 - Input decoding uses AVFoundation. MP4 files must contain an audio track.
 - TTS output is mono WAV at Chatterbox's native 24 kHz sample rate.
 - Successful TTS writes only the output WAV path to stdout. Model progress and diagnostics go to stderr.
+- Successful voice creation writes only the saved profile path to stdout.
 - Set `HF_TOKEN` if Hugging Face requires authentication in your environment.
 
 ## Tests
