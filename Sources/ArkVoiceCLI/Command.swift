@@ -191,7 +191,7 @@ enum CLIParser {
       source = textFile == "-" ? .standardInput : .file(textFile)
     } else {
       throw CLIParseError.message(
-        "Usage: ark-voice tts <text> [--output speech.wav] [--reference voice.wav]")
+        "Usage: ark-voice tts <text> [--output speech.{wav,m4a,aac}] [--reference voice.wav]")
     }
 
     return .speak(
