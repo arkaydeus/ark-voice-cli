@@ -332,7 +332,7 @@ public final class CohereTranscribeModel: Module, STTGenerationModel {
                 )
             } catch {
                 if generationParameters.verbose {
-                    print("VAD pre-processing failed (\(error)); falling back to fixed chunking")
+                    MLXAudioLog.log("VAD pre-processing failed (\(error)); falling back to fixed chunking")
                 }
                 chunks = splitAudioIntoChunks(
                     audio1D,
@@ -367,7 +367,7 @@ public final class CohereTranscribeModel: Module, STTGenerationModel {
             }
 
             if generationParameters.verbose {
-                print("Processing chunk at \(String(format: "%.1f", offsetSeconds))s")
+                MLXAudioLog.log("Processing chunk at \(String(format: "%.1f", offsetSeconds))s")
             }
 
             let chunkParameters = chunkedParameters(
@@ -705,8 +705,8 @@ private extension CohereTranscribeModel {
 
         if generationParameters.verbose {
             let seconds = Double(audio.shape[0]) / Double(config.sampleRate)
-            print("Audio: \(audio.shape[0]) samples (\(String(format: "%.1f", seconds))s)")
-            print("Prompt: \(promptLength) tokens")
+            MLXAudioLog.log("Audio: \(audio.shape[0]) samples (\(String(format: "%.1f", seconds))s)")
+            MLXAudioLog.log("Prompt: \(promptLength) tokens")
         }
 
         return CoherePrefillContext(

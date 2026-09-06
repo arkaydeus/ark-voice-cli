@@ -466,10 +466,10 @@ public final class SenseVoiceModel: Module, STTGenerationModel {
         let decoded = greedyCTCDecode(logProbs[4...])
 
         if verbose {
-            print("Language: \(richInfo["language"] ?? "?")")
-            print("Emotion: \(richInfo["emotion"] ?? "?")")
-            print("Event: \(richInfo["event"] ?? "?")")
-            print("Text: \(decoded.text)")
+            MLXAudioLog.log("Language: \(richInfo["language"] ?? "?")")
+            MLXAudioLog.log("Emotion: \(richInfo["emotion"] ?? "?")")
+            MLXAudioLog.log("Event: \(richInfo["event"] ?? "?")")
+            MLXAudioLog.log("Text: \(decoded.text)")
         }
 
         return STTOutput(

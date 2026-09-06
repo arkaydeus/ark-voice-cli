@@ -3,7 +3,7 @@ import AVFoundation
 import Foundation
 import Testing
 
-@testable import ArkVoiceCLI
+import ArkVoiceKit
 
 @Suite struct AudioOutputTests {
   private enum StubEncodingError: Error {
@@ -66,7 +66,10 @@ import Testing
     case .wav:
       #expect(Int(decoded.frameLength) == samples.count)
     case .m4a, .aac:
-      #expect(abs(Int(decoded.frameLength) - samples.count) <= 2_048)
+      // AAC pads to whole frames, and how much padding the system encoder adds
+      // varies by macOS release; two frames of slack keeps this about the
+      // encoding being correct rather than about the OS version.
+      #expect(abs(Int(decoded.frameLength) - samples.count) <= 4_096)
     }
 
     let channel = try #require(decoded.floatChannelData?[0])

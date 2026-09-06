@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 import Testing
 
-@testable import ArkVoiceCLI
+import ArkVoiceKit
 
 @Suite struct ModelStoreTests {
   @Test func selectionAndCacheDirectoryMapping() {

@@ -270,10 +270,10 @@ public final class Qwen3TTSModel: Module, SpeechGenerationModel, @unchecked Send
         }
 
         let audioID = ObjectIdentifier(refAudio)
-        print("Got audio ID: '\(audioID)'")
+        MLXAudioLog.log("Got audio ID: '\(audioID)'")
         if let cached = withInputPreparationCacheLock({ cachedReferenceAudioContext }),
            cached.audioID == audioID {
-            print("Returning cached context")
+            MLXAudioLog.log("Returning cached context")
             return cached
         }
 
@@ -919,9 +919,9 @@ public final class Qwen3TTSModel: Module, SpeechGenerationModel, @unchecked Send
                let spkIdValue = spkIdMap[speaker.lowercased()] {
                 let spkIdArray = MLXArray([Int32(spkIdValue.intValue)]).reshaped(1, 1)
                 speakerEmbed = talker.getInputEmbeddings()(spkIdArray)
-                print("[Qwen3TTS] CustomVoice: speaker '\(speaker)' → spkId=\(spkIdValue.intValue)")
+                MLXAudioLog.log("[Qwen3TTS] CustomVoice: speaker '\(speaker)' → spkId=\(spkIdValue.intValue)")
             } else {
-                print("[Qwen3TTS] CustomVoice: WARNING - speaker '\(speaker)' not found in spkId map")
+                MLXAudioLog.log("[Qwen3TTS] CustomVoice: WARNING - speaker '\(speaker)' not found in spkId map")
             }
             if let dialectMap = talkerConfig.spkIsDialect,
                let dialectVal = dialectMap[speaker.lowercased()],
@@ -929,7 +929,7 @@ public final class Qwen3TTSModel: Module, SpeechGenerationModel, @unchecked Send
                let dialectName = dialectVal.dialectName,
                let langMap = talkerConfig.codecLanguageId,
                let dialectLangId = langMap[dialectName] {
-                print("[Qwen3TTS] CustomVoice: dialect override '\(dialectName)' langId=\(dialectLangId)")
+                MLXAudioLog.log("[Qwen3TTS] CustomVoice: dialect override '\(dialectName)' langId=\(dialectLangId)")
                 languageId = dialectLangId
             }
         }
@@ -956,7 +956,7 @@ public final class Qwen3TTSModel: Module, SpeechGenerationModel, @unchecked Send
         )
         if let spkEmbed = speakerEmbed {
             codecEmbed = concatenated([codecEmbed, spkEmbed.reshaped([1, 1, -1]), codecEmbedSuffix], axis: 1)
-            print("[Qwen3TTS] CustomVoice: codec prefix length = \(codecEmbed.dim(1))")
+            MLXAudioLog.log("[Qwen3TTS] CustomVoice: codec prefix length = \(codecEmbed.dim(1))")
         } else {
             codecEmbed = concatenated([codecEmbed, codecEmbedSuffix], axis: 1)
         }
@@ -1188,12 +1188,12 @@ public final class Qwen3TTSModel: Module, SpeechGenerationModel, @unchecked Send
                         tokenizerConfigPath: modelDir.appendingPathComponent("tokenizer_config.json"),
                         outputPath: tokenizerJsonPath
                     )
-                    print("Generated tokenizer.json from vocab.json + merges.txt")
+                    MLXAudioLog.log("Generated tokenizer.json from vocab.json + merges.txt")
                 } catch {
-                    print("Warning: Failed to generate tokenizer.json: \(error)")
+                    MLXAudioLog.log("Warning: Failed to generate tokenizer.json: \(error)")
                 }
             } else {
-                print("Warning: Cannot generate tokenizer.json — vocab.json: \(hasVocab), merges.txt: \(hasMerges)")
+                MLXAudioLog.log("Warning: Cannot generate tokenizer.json — vocab.json: \(hasVocab), merges.txt: \(hasMerges)")
             }
         }
 
@@ -1201,7 +1201,7 @@ public final class Qwen3TTSModel: Module, SpeechGenerationModel, @unchecked Send
         do {
             model.tokenizer = try await AutoTokenizer.from(modelFolder: modelDir)
         } catch {
-            print("Warning: Could not load tokenizer: \(error)")
+            MLXAudioLog.log("Warning: Could not load tokenizer: \(error)")
         }
 
         // Load speech tokenizer — check that it's a directory, not a stale file
@@ -1212,13 +1212,13 @@ public final class Qwen3TTSModel: Module, SpeechGenerationModel, @unchecked Send
         } else if fm.fileExists(atPath: speechTokenizerPath.path) {
             // speech_tokenizer exists but is not a directory — stale cache
             // Remove the entire model cache so it re-downloads cleanly next time
-            print("speech_tokenizer is not a directory (stale cache), clearing model cache...")
+            MLXAudioLog.log("speech_tokenizer is not a directory (stale cache), clearing model cache...")
             try? fm.removeItem(at: modelDir)
             throw AudioGenerationError.modelNotInitialized(
                 "Model cache was corrupted (speech_tokenizer). It has been cleared. Please try loading again."
             )
         } else {
-            print("Warning: speech_tokenizer directory not found, speech decoding unavailable")
+            MLXAudioLog.log("Warning: speech_tokenizer directory not found, speech decoding unavailable")
         }
 
         // Load speaker encoder for base models when available
@@ -1232,13 +1232,13 @@ public final class Qwen3TTSModel: Module, SpeechGenerationModel, @unchecked Send
                 }
             }
             if model.speakerEncoder != nil {
-                print("Loaded speaker encoder")
+                MLXAudioLog.log("Loaded speaker encoder")
             } else {
-                print("Warning: speaker encoder config missing, skipping speaker encoder load")
+                MLXAudioLog.log("Warning: speaker encoder config missing, skipping speaker encoder load")
             }
         }
 
-        print("Loaded Qwen3-TTS model (\(config.ttsModelType))")
+        MLXAudioLog.log("Loaded Qwen3-TTS model (\(config.ttsModelType))")
         return model
     }
 
@@ -1249,7 +1249,7 @@ public final class Qwen3TTSModel: Module, SpeechGenerationModel, @unchecked Send
         if let configData = try? Data(contentsOf: configPath) {
             tokenizerConfig = try JSONDecoder().decode(Qwen3TTSTokenizerConfig.self, from: configData)
         } else {
-            print("Warning: speech_tokenizer/config.json not found, using defaults")
+            MLXAudioLog.log("Warning: speech_tokenizer/config.json not found, using defaults")
             let defaultJson = "{}".data(using: .utf8)!
             tokenizerConfig = try JSONDecoder().decode(Qwen3TTSTokenizerConfig.self, from: defaultJson)
         }
@@ -1272,7 +1272,7 @@ public final class Qwen3TTSModel: Module, SpeechGenerationModel, @unchecked Send
         }
 
         model.speechTokenizer = speechTokenizer
-        print("Loaded speech tokenizer decoder")
+        MLXAudioLog.log("Loaded speech tokenizer decoder")
     }
 
     // MARK: - Generate tokenizer.json from vocab.json + merges.txt

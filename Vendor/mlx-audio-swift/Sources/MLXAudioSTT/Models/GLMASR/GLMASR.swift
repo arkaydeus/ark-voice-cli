@@ -428,7 +428,7 @@ public class GLMASRModel: Module {
             generatedTokens.append(nextToken)
 
             if verbose {
-                print(ctx.decode(nextToken), terminator: "")
+                MLXAudioLog.log(ctx.decode(nextToken), terminator: "")
             }
 
             // Step to next token
@@ -438,7 +438,7 @@ public class GLMASRModel: Module {
         let endTime = Date()
 
         if verbose {
-            print()
+            MLXAudioLog.log()
         }
 
         Memory.clearCache()
@@ -646,10 +646,10 @@ public class GLMASRModel: Module {
 
         // Quantize if needed
         if perLayerQuantization != nil {
-            print("Applying quantization from config...")
+            MLXAudioLog.log("Applying quantization from config...")
 
             if let perLayerQuant = perLayerQuantization {
-                print(" Per-layer: \(perLayerQuant)")
+                MLXAudioLog.log(" Per-layer: \(perLayerQuant)")
             }
 
             quantize(model: model) { path, module in

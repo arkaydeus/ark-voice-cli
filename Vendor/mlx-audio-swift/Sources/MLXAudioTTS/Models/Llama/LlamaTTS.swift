@@ -455,8 +455,8 @@ public class LlamaTTSModel: Module, KVCacheDimensionProvider, SpeechGenerationMo
 
         // Handle reference audio and text for voice cloning
         if let refAudio = refAudio, let refText = refText {
-            print("\u{001B}[93mWARNING: Audio cloning doesn't work reliably on Orpheus.\u{001B}[0m")
-            print("A known issue affecting Torch and MLX versions.")
+            MLXAudioLog.log("\u{001B}[93mWARNING: Audio cloning doesn't work reliably on Orpheus.\u{001B}[0m")
+            MLXAudioLog.log("A known issue affecting Torch and MLX versions.")
 
             guard let snacModel = self._snacModel else {
                 fatalError("SNAC model not loaded. Call post_load_hook first.")
@@ -957,7 +957,7 @@ public class LlamaTTSModel: Module, KVCacheDimensionProvider, SpeechGenerationMo
 
         // Quantize if needed
         if perLayerQuantization != nil {
-            print("Applying quantization from config...")
+            MLXAudioLog.log("Applying quantization from config...")
 
             quantize(model: model) { path, module in
                 if weights["\(path).scales"] != nil {

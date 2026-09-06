@@ -2,18 +2,38 @@ import CryptoKit
 import Foundation
 import HuggingFace
 
-struct ModelArtifact: Sendable {
-  let path: String
-  let byteCount: Int
-  let sha256: String?
+public struct ModelArtifact: Sendable {
+  public let path: String
+  public let byteCount: Int
+  public let sha256: String?
+
+  public init(path: String, byteCount: Int, sha256: String?) {
+    self.path = path
+    self.byteCount = byteCount
+    self.sha256 = sha256
+  }
 }
 
-struct ModelSpec: Sendable {
-  let title: String
-  let repository: String
-  let revision: String
-  let purpose: String
-  let artifacts: [ModelArtifact]
+public struct ModelSpec: Sendable {
+  public let title: String
+  public let repository: String
+  public let revision: String
+  public let purpose: String
+  public let artifacts: [ModelArtifact]
+
+  public init(
+    title: String,
+    repository: String,
+    revision: String,
+    purpose: String,
+    artifacts: [ModelArtifact]
+  ) {
+    self.title = title
+    self.repository = repository
+    self.revision = revision
+    self.purpose = purpose
+    self.artifacts = artifacts
+  }
 }
 
 private struct DownloadMarker: Codable, Equatable {
@@ -21,12 +41,12 @@ private struct DownloadMarker: Codable, Equatable {
   let revision: String
 }
 
-enum ModelStoreError: LocalizedError {
+public enum ModelStoreError: LocalizedError {
   case invalidRepository(String)
   case incompleteModel(String, [String])
   case missingModels([String])
 
-  var errorDescription: String? {
+  public var errorDescription: String? {
     switch self {
     case .invalidRepository(let repository):
       "Invalid Hugging Face repository ID: \(repository)"
@@ -38,10 +58,17 @@ enum ModelStoreError: LocalizedError {
   }
 }
 
-enum ModelStore {
+/// Which side of the stack a download or status query covers.
+public enum ModelSelection: String, Equatable, Sendable, CaseIterable {
+  case all
+  case stt
+  case tts
+}
+
+public enum ModelStore {
   private static let markerName = ".ark-voice-model.json"
 
-  static let parakeet = ModelSpec(
+  public static let parakeet = ModelSpec(
     title: "Parakeet TDT 0.6B v2 INT8",
     repository: "sonic-speech/parakeet-tdt-0.6b-v2-int8",
     revision: "01b91aab2fec0ea1d46a7eaf5ead1926568c1358",
@@ -56,7 +83,7 @@ enum ModelStore {
     ]
   )
 
-  static let chatterbox = ModelSpec(
+  public static let chatterbox = ModelSpec(
     title: "Chatterbox Turbo 6-bit",
     repository: "mlx-community/chatterbox-turbo-6bit",
     revision: "afbfd1f8a32f2bc1f32e0fb6b7663c04327e8ff1",
@@ -82,7 +109,7 @@ enum ModelStore {
     ]
   )
 
-  static let s3Tokenizer = ModelSpec(
+  public static let s3Tokenizer = ModelSpec(
     title: "S3TokenizerV2",
     repository: "mlx-community/S3TokenizerV2",
     revision: "e0c9886f0e1c35ae85b1f27277416fb19fc72bec",
@@ -97,22 +124,27 @@ enum ModelStore {
     ]
   )
 
-  static let all = [parakeet, chatterbox, s3Tokenizer]
+  public static let all = [parakeet, chatterbox, s3Tokenizer]
 
-  static var root: URL {
-    FileManager.default.homeDirectoryForCurrentUser
-      .appendingPathComponent(".ark-voice-cli", isDirectory: true)
-  }
+  /// Where models and voices live unless a host chooses otherwise.
+  public static let defaultRoot: URL = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent(".ark-voice-cli", isDirectory: true)
 
-  static var cache: HubCache {
+  public static var root: URL { defaultRoot }
+
+  public static func cache(root: URL = defaultRoot) -> HubCache {
     HubCache(cacheDirectory: root)
   }
 
-  static func configureEnvironment() {
+  /// Points the Hugging Face client at `root`.
+  ///
+  /// `setenv` is process-global, so this is called only where a download is
+  /// actually about to happen rather than at session construction.
+  public static func configureEnvironment(root: URL = defaultRoot) {
     setenv("HF_HUB_CACHE", root.path, 1)
   }
 
-  static func selected(_ selection: ModelSelection) -> [ModelSpec] {
+  public static func selected(_ selection: ModelSelection) -> [ModelSpec] {
     switch selection {
     case .all: all
     case .stt: [parakeet]
@@ -120,11 +152,11 @@ enum ModelStore {
     }
   }
 
-  static func modelDirectory(for model: ModelSpec) -> URL {
+  public static func modelDirectory(for model: ModelSpec) -> URL {
     modelDirectory(for: model, root: root)
   }
 
-  static func modelDirectory(for model: ModelSpec, root: URL) -> URL {
+  public static func modelDirectory(for model: ModelSpec, root: URL) -> URL {
     let directory = model.repository.replacingOccurrences(of: "/", with: "_")
     return
       root
@@ -132,11 +164,11 @@ enum ModelStore {
       .appendingPathComponent(directory, isDirectory: true)
   }
 
-  static func isDownloaded(_ model: ModelSpec) -> Bool {
+  public static func isDownloaded(_ model: ModelSpec) -> Bool {
     isDownloaded(model, root: root)
   }
 
-  static func isDownloaded(_ model: ModelSpec, root: URL) -> Bool {
+  public static func isDownloaded(_ model: ModelSpec, root: URL) -> Bool {
     validationProblems(
       for: model,
       in: modelDirectory(for: model, root: root),
@@ -145,7 +177,7 @@ enum ModelStore {
     ).isEmpty
   }
 
-  static func validationProblems(
+  public static func validationProblems(
     for model: ModelSpec,
     in directory: URL,
     requireMarker: Bool,
@@ -196,25 +228,33 @@ enum ModelStore {
     return problems
   }
 
-  static func requireDownloaded(_ models: [ModelSpec]) throws {
-    let missing = models.filter { !isDownloaded($0) }.map(\.title)
+  public static func requireDownloaded(_ models: [ModelSpec], root: URL = defaultRoot) throws {
+    let missing = models.filter { !isDownloaded($0, root: root) }.map(\.title)
     guard missing.isEmpty else { throw ModelStoreError.missingModels(missing) }
   }
 
-  static func download(_ models: [ModelSpec]) async throws {
+  public static func download(
+    _ models: [ModelSpec],
+    root: URL = defaultRoot,
+    progress: (@Sendable (ProgressEvent) -> Void)? = nil
+  ) async throws {
+    configureEnvironment(root: root)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
 
-    for (index, model) in models.enumerated() {
-      print("[\(index + 1)/\(models.count)] \(model.title)")
-      if isDownloaded(model) {
-        print("Using validated model at: \(modelDirectory(for: model).path)")
+    for model in models {
+      if isDownloaded(model, root: root) {
+        progress?(.modelDownloadFinished(model: model.title, directory: modelDirectory(for: model, root: root)))
         continue
       }
-      try await download(model)
+      try await download(model, root: root, progress: progress)
     }
   }
 
-  private static func download(_ model: ModelSpec) async throws {
+  private static func download(
+    _ model: ModelSpec,
+    root: URL,
+    progress: (@Sendable (ProgressEvent) -> Void)?
+  ) async throws {
     guard let repository = Repo.ID(rawValue: model.repository) else {
       throw ModelStoreError.invalidRepository(model.repository)
     }
@@ -224,16 +264,23 @@ enum ModelStore {
     try FileManager.default.createDirectory(at: stagingRoot, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: staging) }
 
-    let client = HubClient(cache: cache)
-    print("Downloading \(model.repository) at revision \(model.revision)...")
+    let client = HubClient(cache: cache(root: root))
+    progress?(.modelDownloadStarted(model: model.title))
+    let title = model.title
     _ = try await client.downloadSnapshot(
       of: repository,
       kind: .model,
       to: staging,
       revision: model.revision,
       matching: ["*.safetensors", "*.json", "*.txt", "*.model"],
-      progressHandler: { progress in
-        print("\(progress.completedUnitCount)/\(progress.totalUnitCount) bytes")
+      progressHandler: { completed in
+        progress?(
+          .modelDownloadProgress(
+            model: title,
+            completedBytes: completed.completedUnitCount,
+            totalBytes: completed.totalUnitCount
+          )
+        )
       }
     )
 
@@ -245,17 +292,17 @@ enum ModelStore {
     )
     guard problems.isEmpty else {
       try? FileManager.default.removeItem(
-        at: cache.repoDirectory(repo: repository, kind: .model)
+        at: cache(root: root).repoDirectory(repo: repository, kind: .model)
       )
       throw ModelStoreError.incompleteModel(model.title, problems)
     }
 
     try writeCompletionMarker(for: model, in: staging)
-    try activate(staging: staging, for: model)
-    print("Model downloaded to: \(modelDirectory(for: model).path)")
+    try activate(staging: staging, for: model, root: root)
+    progress?(.modelDownloadFinished(model: model.title, directory: modelDirectory(for: model, root: root)))
   }
 
-  static func writeCompletionMarker(for model: ModelSpec, in directory: URL) throws {
+  public static func writeCompletionMarker(for model: ModelSpec, in directory: URL) throws {
     let marker = DownloadMarker(repository: model.repository, revision: model.revision)
     let markerData = try JSONEncoder().encode(marker)
     try markerData.write(
@@ -264,8 +311,8 @@ enum ModelStore {
     )
   }
 
-  private static func activate(staging: URL, for model: ModelSpec) throws {
-    let destination = modelDirectory(for: model)
+  private static func activate(staging: URL, for model: ModelSpec, root: URL) throws {
+    let destination = modelDirectory(for: model, root: root)
     try FileManager.default.createDirectory(
       at: destination.deletingLastPathComponent(),
       withIntermediateDirectories: true

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Example launchd agent for `ark-voice serve`.
+
+  Copy to ~/Library/LaunchAgents/, replace USERNAME, then:
+
+      launchctl load ~/Library/LaunchAgents/com.ark-voice.serve.plist
+
+  The server binds the socket itself, so this is a plain always-running agent
+  rather than an on-demand socket-activated one. With the default
+  --idle-unload it gives its memory back while nothing is calling it.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ark-voice.serve</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/ark-voice</string>
+    <string>serve</string>
+    <string>--idle-unload</string>
+    <string>300</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardErrorPath</key>
+  <string>/Users/USERNAME/Library/Logs/ark-voice-serve.log</string>
+  <key>StandardOutPath</key>
+  <string>/Users/USERNAME/Library/Logs/ark-voice-serve.log</string>
+</dict>
+</plist>

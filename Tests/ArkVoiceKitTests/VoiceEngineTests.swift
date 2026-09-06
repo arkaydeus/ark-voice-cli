@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import ArkVoiceCLI
+import ArkVoiceKit
 
 @Suite struct VoiceEngineTests {
   @Test func strictUTF8Decoding() throws {
@@ -17,6 +17,64 @@ import Testing
       VoiceEngine.chunkText("  Hello,\nworld.  This is a test. ")
         == ["Hello, world. This is a test."]
     )
+  }
+
+  @Test func invalidSessionConfigurationFailsWithoutTrapping() async {
+    for configuration in [
+      SessionConfiguration(maximumChunkCharacters: 0),
+      SessionConfiguration(maximumChunkCharacters: -1),
+      SessionConfiguration(silenceBetweenChunks: -0.1),
+      SessionConfiguration(silenceBetweenChunks: .nan),
+      SessionConfiguration(silenceBetweenChunks: .infinity),
+      SessionConfiguration(silenceBetweenChunks: .greatestFiniteMagnitude),
+    ] {
+      let session = VoiceSession(configuration: configuration)
+      do {
+        for try await _ in session.synthesize("hello") {}
+        Issue.record("Invalid configuration unexpectedly synthesized.")
+      } catch let error as VoiceEngineError {
+        #expect(error.localizedDescription.contains("Invalid session configuration"))
+      } catch {
+        Issue.record("Unexpected error: \(error)")
+      }
+    }
+  }
+
+  @Test func conditionalUnloadRechecksAfterWaitingForTheModelGate() async throws {
+    let session = VoiceSession()
+    let enteredGate = DispatchSemaphore(value: 0)
+    let releaseGate = DispatchSemaphore(value: 0)
+    let evaluatedSecondCondition = DispatchSemaphore(value: 0)
+
+    let first = Task {
+      await session.unloadModels {
+        enteredGate.signal()
+        releaseGate.wait()
+        return false
+      }
+    }
+    _ = try await waitOnThread(enteredGate)
+
+    let second = Task {
+      await session.unloadModels {
+        evaluatedSecondCondition.signal()
+        return false
+      }
+    }
+    let earlyEvaluation = try await waitOnThread(
+      evaluatedSecondCondition,
+      timeout: .now() + 0.05
+    )
+    #expect(earlyEvaluation == .timedOut)
+
+    releaseGate.signal()
+    #expect(await first.value == false)
+    #expect(await second.value == false)
+    let eventualEvaluation = try await waitOnThread(
+      evaluatedSecondCondition,
+      timeout: .now()
+    )
+    #expect(eventualEvaluation == .success)
   }
 
   @Test func longTTSInputUsesSentenceBoundariesAndHonorsLimit() {
@@ -58,26 +116,6 @@ import Testing
     #expect(error?.localizedDescription.contains("S3 tokenizer could not be loaded") == true)
   }
 
-  @Test func synthesisRejectsEmptyTextAndUnsupportedOutputBeforeInference() async {
-    let emptyError = await #expect(throws: VoiceEngineError.self) {
-      try await VoiceEngine.speak(
-        textSource: .literal(" \n "),
-        outputPath: "/tmp/unused.wav",
-        referencePath: nil
-      )
-    }
-    #expect(emptyError?.localizedDescription == "Text input is empty.")
-
-    let outputError = await #expect(throws: VoiceEngineError.self) {
-      try await VoiceEngine.speak(
-        textSource: .literal("hello"),
-        outputPath: "/tmp/unused.mp3",
-        referencePath: nil
-      )
-    }
-    #expect(outputError?.localizedDescription.contains("Supported outputs: wav, m4a, aac") == true)
-  }
-
   @Test func ttsOutputFormatAcceptsEverySupportedExtension() throws {
     #expect(
       try VoiceEngine.ttsOutputFormat(for: URL(fileURLWithPath: "/tmp/speech.wav")) == .wav
@@ -90,23 +128,6 @@ import Testing
     )
     #expect(throws: VoiceEngineError.self) {
       try VoiceEngine.ttsOutputFormat(for: URL(fileURLWithPath: "/tmp/speech.mp3"))
-    }
-  }
-
-  @Test func textFileReadingRejectsMissingAndMalformedFiles() throws {
-    let directory = temporaryDirectory()
-    defer { try? FileManager.default.removeItem(at: directory) }
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-
-    let valid = directory.appendingPathComponent("valid.txt")
-    try Data("words".utf8).write(to: valid)
-    #expect(try VoiceEngine.readText(.file(valid.path)) == "words")
-
-    let invalid = directory.appendingPathComponent("invalid.txt")
-    try Data([0xff]).write(to: invalid)
-    #expect(throws: (any Error).self) { try VoiceEngine.readText(.file(invalid.path)) }
-    #expect(throws: (any Error).self) {
-      try VoiceEngine.readText(.file(directory.appendingPathComponent("missing.txt").path))
     }
   }
 
@@ -196,5 +217,16 @@ import Testing
   private func temporaryDirectory() -> URL {
     FileManager.default.temporaryDirectory
       .appendingPathComponent("ark-voice-engine-tests-\(UUID().uuidString)", isDirectory: true)
+  }
+
+  private func waitOnThread(
+    _ semaphore: DispatchSemaphore,
+    timeout: DispatchTime = .distantFuture
+  ) async throws -> DispatchTimeoutResult {
+    try await withCheckedThrowingContinuation { continuation in
+      DispatchQueue.global().async {
+        continuation.resume(returning: semaphore.wait(timeout: timeout))
+      }
+    }
   }
 }

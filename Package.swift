@@ -8,7 +8,9 @@ let package = Package(
     .macOS(.v14)
   ],
   products: [
-    .executable(name: "ark-voice", targets: ["ArkVoiceCLI"])
+    .executable(name: "ark-voice", targets: ["ArkVoiceCLI"]),
+    .library(name: "ArkVoiceKit", targets: ["ArkVoiceKit"]),
+    .library(name: "ArkVoiceServer", targets: ["ArkVoiceServer"]),
   ],
   dependencies: [
     .package(path: "Vendor/mlx-audio-swift"),
@@ -26,8 +28,8 @@ let package = Package(
     ),
   ],
   targets: [
-    .executableTarget(
-      name: "ArkVoiceCLI",
+    .target(
+      name: "ArkVoiceKit",
       dependencies: [
         .product(name: "MLXAudioCore", package: "mlx-audio-swift"),
         .product(name: "MLXAudioCodecs", package: "mlx-audio-swift"),
@@ -37,12 +39,35 @@ let package = Package(
         .product(name: "MLX", package: "mlx-swift"),
       ]
     ),
+    .target(
+      name: "ArkVoiceServer",
+      dependencies: ["ArkVoiceKit"]
+    ),
+    .executableTarget(
+      name: "ArkVoiceCLI",
+      dependencies: ["ArkVoiceKit", "ArkVoiceServer"]
+    ),
+    .testTarget(
+      name: "ArkVoiceKitTests",
+      dependencies: [
+        "ArkVoiceKit",
+        .product(name: "MLX", package: "mlx-swift"),
+        .product(name: "MLXAudioTTS", package: "mlx-audio-swift"),
+        .product(name: "Testing", package: "swift-testing"),
+      ]
+    ),
+    .testTarget(
+      name: "ArkVoiceServerTests",
+      dependencies: [
+        "ArkVoiceServer",
+        "ArkVoiceKit",
+        .product(name: "Testing", package: "swift-testing"),
+      ]
+    ),
     .testTarget(
       name: "ArkVoiceCLITests",
       dependencies: [
         "ArkVoiceCLI",
-        .product(name: "MLX", package: "mlx-swift"),
-        .product(name: "MLXAudioTTS", package: "mlx-audio-swift"),
         .product(name: "Testing", package: "swift-testing"),
       ]
     ),

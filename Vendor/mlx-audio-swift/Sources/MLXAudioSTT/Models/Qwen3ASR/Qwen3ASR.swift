@@ -1777,7 +1777,7 @@ public class Qwen3ASRModel: Module {
         """
 
         try tokenizerJSON.write(to: tokenizerJSONPath, atomically: true, encoding: .utf8)
-        print("Generated tokenizer.json at: \(tokenizerJSONPath.path)")
+        MLXAudioLog.log("Generated tokenizer.json at: \(tokenizerJSONPath.path)")
     }
 
     // MARK: - Model Loading
