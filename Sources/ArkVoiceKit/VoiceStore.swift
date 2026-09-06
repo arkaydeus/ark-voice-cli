@@ -2,14 +2,14 @@ import Foundation
 import MLX
 import MLXAudioTTS
 
-enum VoiceStoreError: LocalizedError {
+public enum VoiceStoreError: LocalizedError {
   case invalidName(String)
   case alreadyExists(String)
   case notFound(String)
   case incompatible(String)
   case invalidProfile(String)
 
-  var errorDescription: String? {
+  public var errorDescription: String? {
     switch self {
     case .invalidName(let name):
       "Invalid voice name '\(name)'. Use 1-64 letters, numbers, hyphens, or underscores."
@@ -25,7 +25,7 @@ enum VoiceStoreError: LocalizedError {
   }
 }
 
-enum VoiceStore {
+public enum VoiceStore {
   private static let schemaVersion = "1"
   private static let requiredArrayNames: Set<String> = [
     "gen.embedding",
@@ -38,11 +38,14 @@ enum VoiceStore {
     "t3.speaker_emb",
   ]
 
-  static var root: URL {
-    ModelStore.root.appendingPathComponent("voices", isDirectory: true)
+  public static var root: URL { root(modelRoot: ModelStore.defaultRoot) }
+
+  /// Voices live beside the models they were created for.
+  public static func root(modelRoot: URL) -> URL {
+    modelRoot.appendingPathComponent("voices", isDirectory: true)
   }
 
-  static func validateName(_ name: String) throws {
+  public static func validateName(_ name: String) throws {
     let allowed = CharacterSet(
       charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
     )
@@ -54,7 +57,7 @@ enum VoiceStore {
     }
   }
 
-  static func save(
+  public static func save(
     _ conditioning: DefaultConditioning,
     name: String,
     root: URL = root,
@@ -82,7 +85,7 @@ enum VoiceStore {
     return destination
   }
 
-  static func requireAvailable(name: String, root: URL = root) throws {
+  public static func requireAvailable(name: String, root: URL = root) throws {
     try validateName(name)
     let destination = root.appendingPathComponent("\(name).safetensors")
     guard !FileManager.default.fileExists(atPath: destination.path) else {
@@ -90,10 +93,15 @@ enum VoiceStore {
     }
   }
 
-  static func load(
+  /// Reads a saved profile.
+  ///
+  /// Loading happens on the CPU stream and the arrays are materialized before
+  /// they are returned: MLX cannot evaluate a deferred `Load` on the GPU, so a
+  /// lazily loaded profile crashes the first time synthesis touches it.
+  public static func load(
     name: String,
     root: URL = root,
-    stream: StreamOrDevice = .default
+    stream: StreamOrDevice = .cpu
   ) throws -> DefaultConditioning {
     try validateName(name)
     let url = root.appendingPathComponent("\(name).safetensors")
@@ -102,6 +110,7 @@ enum VoiceStore {
     }
 
     let (arrays, metadata) = try MLX.loadArraysAndMetadata(url: url, stream: stream)
+    MLX.eval(Array(arrays.values))
     guard metadata["ark_voice_schema"] == schemaVersion,
       metadata["model_repository"] == ModelStore.chatterbox.repository,
       metadata["model_revision"] == ModelStore.chatterbox.revision
@@ -130,7 +139,7 @@ enum VoiceStore {
     )
   }
 
-  static func names(root: URL = root) throws -> [String] {
+  public static func names(root: URL = root) throws -> [String] {
     guard FileManager.default.fileExists(atPath: root.path) else { return [] }
     return try FileManager.default.contentsOfDirectory(
       at: root,

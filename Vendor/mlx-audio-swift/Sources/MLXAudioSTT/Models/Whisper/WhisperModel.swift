@@ -50,7 +50,7 @@ public final class WhisperModel: Module, STTGenerationModel {
         for (index, chunk) in chunks.enumerated() {
             if generationParameters.verbose {
                 let endSeconds = chunk.offsetSeconds + Float(chunk.audio.dim(0)) / Float(WhisperAudioConfig.sampleRate)
-                print("[Whisper] chunk \(index + 1)/\(chunks.count) \(String(format: "%.1f", chunk.offsetSeconds))s..\(String(format: "%.1f", endSeconds))s")
+                MLXAudioLog.log("[Whisper] chunk \(index + 1)/\(chunks.count) \(String(format: "%.1f", chunk.offsetSeconds))s..\(String(format: "%.1f", endSeconds))s")
             }
             let (text, promptTokens, generationTokens, lang) = transcribeChunk(
                 audio: chunk.audio,
@@ -107,7 +107,7 @@ public final class WhisperModel: Module, STTGenerationModel {
             for (index, chunk) in chunks.enumerated() {
                 if generationParameters.verbose {
                     let endSeconds = chunk.offsetSeconds + Float(chunk.audio.dim(0)) / Float(WhisperAudioConfig.sampleRate)
-                    print("[Whisper] chunk \(index + 1)/\(chunks.count) \(String(format: "%.1f", chunk.offsetSeconds))s..\(String(format: "%.1f", endSeconds))s")
+                    MLXAudioLog.log("[Whisper] chunk \(index + 1)/\(chunks.count) \(String(format: "%.1f", chunk.offsetSeconds))s..\(String(format: "%.1f", endSeconds))s")
                 }
 
                 let (text, promptTokens, generationTokens, lang) = transcribeChunk(
@@ -615,7 +615,7 @@ public final class WhisperModel: Module, STTGenerationModel {
 
         try FileManager.default.createDirectory(at: targetDir, withIntermediateDirectories: true)
 
-        print("Fetching Whisper tokenizer assets from \(tokenizerRepo)…")
+        MLXAudioLog.log("Fetching Whisper tokenizer assets from \(tokenizerRepo)…")
         _ = try await client.downloadSnapshot(
             of: repoID,
             kind: .model,
@@ -623,7 +623,7 @@ public final class WhisperModel: Module, STTGenerationModel {
             revision: "main",
             matching: needed,
             progressHandler: { progress in
-                print("\(progress.completedUnitCount)/\(progress.totalUnitCount) tokenizer files")
+                MLXAudioLog.log("\(progress.completedUnitCount)/\(progress.totalUnitCount) tokenizer files")
             }
         )
 

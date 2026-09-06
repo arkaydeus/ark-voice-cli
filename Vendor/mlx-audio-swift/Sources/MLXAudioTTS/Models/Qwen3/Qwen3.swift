@@ -385,7 +385,7 @@ public class Qwen3Model: Module, KVCacheDimensionProvider, SpeechGenerationModel
         var refTranscriptIds: [Int32]? = nil
 
         if let refAudio = refAudio, let refText = refText {
-            print("\u{001B}[93mWARNING: Audio cloning doesn't work reliably on this model.\u{001B}[0m")
+            MLXAudioLog.log("\u{001B}[93mWARNING: Audio cloning doesn't work reliably on this model.\u{001B}[0m")
 
             guard let snacModel = self._snacModel else {
                 fatalError("SNAC model not loaded. Call post_load_hook first.")
@@ -907,10 +907,10 @@ public class Qwen3Model: Module, KVCacheDimensionProvider, SpeechGenerationModel
 
         // Quantize if needed
         if perLayerQuantization != nil {
-            print("Applying quantizaiton from config...")
+            MLXAudioLog.log("Applying quantizaiton from config...")
 
             if let perLayerQuant = perLayerQuantization {
-                print(" Per-layer: \(perLayerQuant)")
+                MLXAudioLog.log(" Per-layer: \(perLayerQuant)")
             }
 
             quantize(model: model) { path, module in

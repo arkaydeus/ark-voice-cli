@@ -1,23 +1,23 @@
 import Darwin
 import Foundation
-import MLX
 import MLXAudioCodecs
-import MLXAudioCore
-import MLXAudioSTT
 import MLXAudioTTS
 
-enum VoiceEngineError: LocalizedError {
+public enum VoiceEngineError: LocalizedError {
   case fileNotFound(String)
   case unsupportedAudioFormat(String)
   case emptyText
   case invalidTextEncoding(String)
   case unsupportedOutputFormat(String)
   case audioEncodingFailed(String)
+  case audioDecodingFailed(String)
   case missingMetalLibrary
   case tokenizerUnavailable(String)
-  case standardOutputRedirectionFailed
+  case invalidSampleRate(Int)
+  case malformedSampleData(String)
+  case invalidConfiguration(String)
 
-  var errorDescription: String? {
+  public var errorDescription: String? {
     switch self {
     case .fileNotFound(let path):
       "File not found: \(path)"
@@ -31,162 +31,38 @@ enum VoiceEngineError: LocalizedError {
       "Unsupported TTS output format: \(path). Supported outputs: \(AudioOutputFormat.supportedExtensionsDescription)."
     case .audioEncodingFailed(let details):
       "Could not encode audio output: \(details)"
+    case .audioDecodingFailed(let details):
+      "Could not decode audio input: \(details)"
     case .missingMetalLibrary:
       "MLX's Metal shader library is missing. Build with './Scripts/build-release.sh' and keep mlx.metallib beside the ark-voice executable."
     case .tokenizerUnavailable(let details):
       "Chatterbox's S3 tokenizer could not be loaded: \(details)"
-    case .standardOutputRedirectionFailed:
-      "Could not redirect model progress output to stderr."
+    case .invalidSampleRate(let rate):
+      "Invalid sample rate: \(rate)."
+    case .malformedSampleData(let details):
+      "Malformed PCM data: \(details)"
+    case .invalidConfiguration(let details):
+      "Invalid session configuration: \(details)"
     }
   }
 }
 
-enum VoiceEngine {
-  private static let supportedAudioExtensions: Set<String> = ["wav", "aac", "m4a", "mp4"]
-  private static let maximumTTSChunkCharacters = 300
-  private static let silenceBetweenTTSChunksSeconds = 0.15
+/// Pure helpers shared by the session, the CLI, and the server.
+///
+/// Nothing here loads a model or performs I/O on standard streams; the pieces
+/// are separated so they stay testable without downloaded models.
+public enum VoiceEngine {
+  public static let supportedAudioExtensions: Set<String> = ["wav", "aac", "m4a", "mp4"]
+  public static let defaultMaximumChunkCharacters = 300
 
-  static func transcribe(inputPath: String, outputPath: String?) async throws {
-    let input = try audioURL(inputPath)
-    try requireMLXRuntime()
-    let (_, audio) = try loadAudioArray(from: input, sampleRate: 16_000)
-    try ModelStore.requireDownloaded([ModelStore.parakeet])
-
-    let model = try ParakeetModel.fromDirectory(
-      ModelStore.modelDirectory(for: ModelStore.parakeet)
-    )
-    let parameters = STTGenerateParameters(language: "English")
-    let result = model.generate(audio: audio, generationParameters: parameters)
-    let transcript = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-
-    if let outputPath {
-      let output = resolvedURL(outputPath)
-      try createParentDirectory(for: output)
-      try (transcript + "\n").write(to: output, atomically: true, encoding: .utf8)
-      writeStandardError("Transcript written to \(output.path)\n")
-    } else {
-      print(transcript)
-    }
-  }
-
-  static func speak(
-    textSource: TextSource,
-    outputPath: String,
-    referencePath: String?,
-    voiceName: String? = nil
-  ) async throws {
-    let text = try readText(textSource).trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty else { throw VoiceEngineError.emptyText }
-
-    let output = resolvedURL(outputPath)
-    let outputFormat = try ttsOutputFormat(for: output)
-    try requireMLXRuntime()
-
-    let referenceAudio: MLXArray?
-    if let referencePath {
-      let reference = try audioURL(referencePath)
-      (_, referenceAudio) = try loadAudioArray(from: reference, sampleRate: 24_000)
-    } else {
-      referenceAudio = nil
-    }
-
-    try ModelStore.requireDownloaded([ModelStore.chatterbox, ModelStore.s3Tokenizer])
-
-    let chunks = chunkText(text, maximumCharacters: maximumTTSChunkCharacters)
-    let (audioSamples, sampleRate) = try await withStandardOutputRedirectedToStandardError {
-      let model = try await loadChatterboxModel()
-      if let voiceName {
-        model.defaultConditioning = try VoiceStore.load(name: voiceName)
-      } else if let referenceAudio {
-        model.defaultConditioning = try model.prepareConditioning(refAudio: referenceAudio)
-      }
-
-      var samples = [Float]()
-      let silenceSampleCount = Int(Double(model.sampleRate) * silenceBetweenTTSChunksSeconds)
-      for (index, chunk) in chunks.enumerated() {
-        try Task.checkCancellation()
-        if chunks.count > 1 {
-          print(
-            "Generating speech chunk \(index + 1)/\(chunks.count) "
-              + "(\(chunk.count) characters)..."
-          )
-        }
-        let generated = try await model.generate(
-          text: chunk,
-          voice: nil,
-          refAudio: nil,
-          refText: nil,
-          language: "English",
-          generationParameters: model.defaultGenerationParameters
-        )
-        if index > 0 {
-          samples.append(contentsOf: repeatElement(0, count: silenceSampleCount))
-        }
-        samples.append(contentsOf: generated.asArray(Float.self))
-      }
-      return (samples, model.sampleRate)
-    }
-
-    try createParentDirectory(for: output)
-    try AudioFileWriter.write(
-      samples: audioSamples,
-      sampleRate: sampleRate,
-      to: output,
-      format: outputFormat
-    )
-    print(output.path)
-  }
-
-  static func ttsOutputFormat(for output: URL) throws -> AudioOutputFormat {
+  public static func ttsOutputFormat(for output: URL) throws -> AudioOutputFormat {
     guard let format = AudioOutputFormat(url: output) else {
       throw VoiceEngineError.unsupportedOutputFormat(output.path)
     }
     return format
   }
 
-  static func createVoice(name: String, referencePath: String) async throws {
-    try VoiceStore.requireAvailable(name: name)
-    let reference = try audioURL(referencePath)
-    try requireMLXRuntime()
-    let (_, referenceAudio) = try loadAudioArray(from: reference, sampleRate: 24_000)
-    try ModelStore.requireDownloaded([ModelStore.chatterbox, ModelStore.s3Tokenizer])
-
-    let profile = try await withStandardOutputRedirectedToStandardError {
-      let model = try await loadChatterboxModel()
-      return try model.prepareConditioning(refAudio: referenceAudio)
-    }
-    let url = try VoiceStore.save(profile, name: name)
-    print(url.path)
-  }
-
-  private static func loadChatterboxModel() async throws -> ChatterboxModel {
-    let model = try await ChatterboxModel.fromModelDirectory(
-      ModelStore.modelDirectory(for: ModelStore.chatterbox),
-      hfToken: ProcessInfo.processInfo.environment["HF_TOKEN"]
-    )
-    model.s3Tokenizer = try loadS3Tokenizer(
-      from: ModelStore.modelDirectory(for: ModelStore.s3Tokenizer)
-    )
-    return model
-  }
-
-  static func readText(_ source: TextSource) throws -> String {
-    switch source {
-    case .literal(let text):
-      return text
-    case .file(let path):
-      let url = resolvedURL(path)
-      guard FileManager.default.fileExists(atPath: url.path) else {
-        throw VoiceEngineError.fileNotFound(url.path)
-      }
-      return try decodeUTF8(Data(contentsOf: url), source: url.path)
-    case .standardInput:
-      let data = FileHandle.standardInput.readDataToEndOfFile()
-      return try decodeUTF8(data, source: "stdin")
-    }
-  }
-
-  static func decodeUTF8(_ data: Data, source: String) throws -> String {
+  public static func decodeUTF8(_ data: Data, source: String) throws -> String {
     guard let text = String(data: data, encoding: .utf8) else {
       throw VoiceEngineError.invalidTextEncoding(source)
     }
@@ -194,9 +70,10 @@ enum VoiceEngine {
   }
 
   /// Splits long-form input into model-sized chunks, preferring sentence and word boundaries.
-  static func chunkText(_ text: String, maximumCharacters: Int = maximumTTSChunkCharacters)
-    -> [String]
-  {
+  public static func chunkText(
+    _ text: String,
+    maximumCharacters: Int = defaultMaximumChunkCharacters
+  ) -> [String] {
     precondition(maximumCharacters > 0)
     let normalized = text.split(whereSeparator: \Character.isWhitespace).joined(separator: " ")
     guard !normalized.isEmpty else { return [] }
@@ -318,7 +195,7 @@ enum VoiceEngine {
     return clauses
   }
 
-  static func loadS3Tokenizer(from directory: URL) throws -> S3TokenizerV2 {
+  public static func loadS3Tokenizer(from directory: URL) throws -> S3TokenizerV2 {
     do {
       return try S3TokenizerV2.fromModelDirectory(directory)
     } catch {
@@ -326,7 +203,7 @@ enum VoiceEngine {
     }
   }
 
-  static func audioURL(_ path: String) throws -> URL {
+  public static func audioURL(_ path: String) throws -> URL {
     let url = resolvedURL(path)
     guard FileManager.default.fileExists(atPath: url.path) else {
       throw VoiceEngineError.fileNotFound(url.path)
@@ -338,14 +215,24 @@ enum VoiceEngine {
     return url
   }
 
-  static func createParentDirectory(for url: URL) throws {
+  public static func createParentDirectory(for url: URL) throws {
     try FileManager.default.createDirectory(
       at: url.deletingLastPathComponent(),
       withIntermediateDirectories: true
     )
   }
 
-  static func requireMLXRuntime(executableURL: URL? = nil) throws {
+  /// Confirms MLX's Metal shader library is reachable before any model runs.
+  ///
+  /// `explicitURL` lets an embedding host name its bundled copy; otherwise the
+  /// library is looked for beside the executable.
+  public static func requireMLXRuntime(
+    executableURL: URL? = nil,
+    explicitURL: URL? = nil
+  ) throws {
+    if let explicitURL, FileManager.default.fileExists(atPath: explicitURL.path) {
+      return
+    }
     let executable =
       executableURL
       ?? Bundle.main.executableURL
@@ -356,7 +243,7 @@ enum VoiceEngine {
     }
   }
 
-  static func mlxRuntimeCandidates(for executable: URL) -> [URL] {
+  public static func mlxRuntimeCandidates(for executable: URL) -> [URL] {
     let invocationDirectory = executable.standardizedFileURL.deletingLastPathComponent()
     let resolvedDirectory = executable.resolvingSymlinksInPath().deletingLastPathComponent()
     var directories = [resolvedDirectory]
@@ -372,38 +259,10 @@ enum VoiceEngine {
       ]
     }
   }
-
-  static func withStandardOutputRedirectedToStandardError<T>(
-    _ operation: () async throws -> T
-  ) async throws -> T {
-    fflush(nil)
-    let savedStandardOutput = dup(STDOUT_FILENO)
-    guard savedStandardOutput >= 0 else {
-      throw VoiceEngineError.standardOutputRedirectionFailed
-    }
-    guard dup2(STDERR_FILENO, STDOUT_FILENO) >= 0 else {
-      close(savedStandardOutput)
-      throw VoiceEngineError.standardOutputRedirectionFailed
-    }
-
-    func restoreStandardOutput() {
-      fflush(nil)
-      _ = dup2(savedStandardOutput, STDOUT_FILENO)
-      close(savedStandardOutput)
-    }
-
-    do {
-      let result = try await operation()
-      restoreStandardOutput()
-      return result
-    } catch {
-      restoreStandardOutput()
-      throw error
-    }
-  }
 }
 
-func resolvedURL(_ path: String) -> URL {
+/// Expands `~` and resolves relative paths against the current directory.
+public func resolvedURL(_ path: String) -> URL {
   let expanded = NSString(string: path).expandingTildeInPath
   if expanded.hasPrefix("/") {
     return URL(fileURLWithPath: expanded).standardizedFileURL
@@ -411,8 +270,4 @@ func resolvedURL(_ path: String) -> URL {
   return URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
     .appendingPathComponent(expanded)
     .standardizedFileURL
-}
-
-func writeStandardError(_ text: String) {
-  FileHandle.standardError.write(Data(text.utf8))
 }

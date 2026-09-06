@@ -142,7 +142,7 @@ public final class VoxtralRealtimeModel: Module, STTGenerationModel {
             )
         } catch {
             if generationParameters.verbose {
-                print("VAD pre-processing failed (\(error)); falling back to single-pass generate")
+                MLXAudioLog.log("VAD pre-processing failed (\(error)); falling back to single-pass generate")
             }
             return generate(audio: audio1D, generationParameters: generationParameters)
         }
@@ -159,7 +159,7 @@ public final class VoxtralRealtimeModel: Module, STTGenerationModel {
         for (chunkAudio, offsetSeconds) in chunks {
             if remainingTokens <= 0 { break }
             if generationParameters.verbose {
-                print("Voxtral VAD chunk at \(String(format: "%.1f", offsetSeconds))s")
+                MLXAudioLog.log("Voxtral VAD chunk at \(String(format: "%.1f", offsetSeconds))s")
             }
             let chunkParameters = STTGenerateParameters(
                 maxTokens: remainingTokens,
@@ -448,8 +448,8 @@ extension VoxtralRealtimeModel {
 
         if verbose {
             let seconds = Double(audio.shape[0]) / Double(VoxtralRealtimeConstants.sampleRate)
-            print("Audio: \(audio.shape[0]) samples (\(String(format: "%.1f", seconds))s)")
-            print("Prompt: \(promptLength) tokens, Audio span: \(nAudioTotal) tokens")
+            MLXAudioLog.log("Audio: \(audio.shape[0]) samples (\(String(format: "%.1f", seconds))s)")
+            MLXAudioLog.log("Prompt: \(promptLength) tokens, Audio span: \(nAudioTotal) tokens")
         }
 
         return VoxtralPrefillContext(

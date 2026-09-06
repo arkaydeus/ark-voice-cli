@@ -61,7 +61,7 @@ public class AudioPlayer: NSObject, ObservableObject {
             currentTime = 0
 
         } catch {
-            print("Failed to load audio: \(error.localizedDescription)")
+            MLXAudioLog.log("Failed to load audio: \(error.localizedDescription)")
             currentAudioURL = nil
             duration = 0
             currentTime = 0
@@ -149,7 +149,7 @@ public class AudioPlayer: NSObject, ObservableObject {
         do {
             try startStreamingEngine(connectionFormat: streamingFormat)
         } catch {
-            print("Failed to start audio engine: \(error)")
+            MLXAudioLog.log("Failed to start audio engine: \(error)")
         }
     }
 
@@ -164,7 +164,7 @@ public class AudioPlayer: NSObject, ObservableObject {
         do {
             try startStreamingEngine(connectionFormat: nil)
         } catch {
-            print("Failed to start audio engine: \(error)")
+            MLXAudioLog.log("Failed to start audio engine: \(error)")
             return
         }
 
@@ -192,7 +192,7 @@ public class AudioPlayer: NSObject, ObservableObject {
             } catch is CancellationError {
                 // no-op
             } catch {
-                print("Streaming playback failed: \(error)")
+                MLXAudioLog.log("Streaming playback failed: \(error)")
                 stopStreaming()
             }
         }
@@ -346,7 +346,7 @@ public class AudioPlayer: NSObject, ObservableObject {
                             playerNode?.play()
                         }
                     } catch {
-                        print("Failed to restart audio engine after configuration change: \(error)")
+                        MLXAudioLog.log("Failed to restart audio engine after configuration change: \(error)")
                     }
                 }
             }
@@ -406,7 +406,7 @@ extension AudioPlayer: @MainActor AVAudioPlayerDelegate {
     }
 
     public func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
-        print("Audio decode error: \(error?.localizedDescription ?? "unknown")")
+        MLXAudioLog.log("Audio decode error: \(error?.localizedDescription ?? "unknown")")
         isPlaying = false
         setSpeaking(false)
         stopTimer()

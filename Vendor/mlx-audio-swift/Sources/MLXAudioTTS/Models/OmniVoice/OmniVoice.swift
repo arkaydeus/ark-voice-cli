@@ -871,7 +871,7 @@ public final class OmniVoiceModel: Module, SpeechGenerationModel, @unchecked Sen
         let inferredNumCodebooks = Self.inferNumCodebooks(from: rawWeights)
             ?? (configDict["num_audio_codebook"] as? Int ?? 9)
         if let currentNum = configDict["num_audio_codebook"] as? Int, currentNum != inferredNumCodebooks {
-            print("[OmniVoiceModel] INFO: overriding num_audio_codebook from \(currentNum) to \(inferredNumCodebooks) to match checkpoint")
+            MLXAudioLog.log("[OmniVoiceModel] INFO: overriding num_audio_codebook from \(currentNum) to \(inferredNumCodebooks) to match checkpoint")
             configDict["num_audio_codebook"] = inferredNumCodebooks
             if let weights = configDict["audio_codebook_weights"] as? [Int], weights.count != inferredNumCodebooks {
                 var newWeights = weights
@@ -895,10 +895,10 @@ public final class OmniVoiceModel: Module, SpeechGenerationModel, @unchecked Sen
         let missing = paramKeys.subtracting(weightKeys).sorted()
         let extra = weightKeys.subtracting(paramKeys).sorted()
         if !missing.isEmpty {
-            print("[OmniVoiceModel] WARNING: \(missing.count) parameters missing from checkpoint: \(missing.prefix(10))")
+            MLXAudioLog.log("[OmniVoiceModel] WARNING: \(missing.count) parameters missing from checkpoint: \(missing.prefix(10))")
         }
         if !extra.isEmpty {
-            print("[OmniVoiceModel] WARNING: \(extra.count) extra keys after sanitize: \(extra.prefix(10))")
+            MLXAudioLog.log("[OmniVoiceModel] WARNING: \(extra.count) extra keys after sanitize: \(extra.prefix(10))")
         }
         // Weights run as float32: the diffusion loop is sensitive to logit
         // precision and the reference checkpoint ships fp32 (no-op there).
@@ -1713,10 +1713,10 @@ public final class OmniVoiceAudioTokenizer: Module {
         }
 
         if let currentNum = configDict["n_codebooks"] as? Int, currentNum != inferredNCodebooks {
-            print("[OmniVoiceAudioTokenizer] INFO: overriding n_codebooks from \(currentNum) to \(inferredNCodebooks) to match checkpoint")
+            MLXAudioLog.log("[OmniVoiceAudioTokenizer] INFO: overriding n_codebooks from \(currentNum) to \(inferredNCodebooks) to match checkpoint")
             configDict["n_codebooks"] = inferredNCodebooks
         } else if configDict["n_codebooks"] == nil {
-            print("[OmniVoiceAudioTokenizer] INFO: setting n_codebooks to \(inferredNCodebooks) from checkpoint")
+            MLXAudioLog.log("[OmniVoiceAudioTokenizer] INFO: setting n_codebooks to \(inferredNCodebooks) from checkpoint")
             configDict["n_codebooks"] = inferredNCodebooks
         }
         let patchedConfigData = try JSONSerialization.data(withJSONObject: configDict)
@@ -1735,10 +1735,10 @@ public final class OmniVoiceAudioTokenizer: Module {
         let missing = paramKeys.subtracting(weightKeys).sorted()
         let extra = weightKeys.subtracting(paramKeys).sorted()
         if !missing.isEmpty {
-            print("[OmniVoiceAudioTokenizer] WARNING: \(missing.count) parameters missing from checkpoint: \(missing.prefix(10))")
+            MLXAudioLog.log("[OmniVoiceAudioTokenizer] WARNING: \(missing.count) parameters missing from checkpoint: \(missing.prefix(10))")
         }
         if !extra.isEmpty {
-            print("[OmniVoiceAudioTokenizer] WARNING: \(extra.count) extra keys in checkpoint: \(extra.prefix(10))")
+            MLXAudioLog.log("[OmniVoiceAudioTokenizer] WARNING: \(extra.count) extra keys in checkpoint: \(extra.prefix(10))")
         }
 
         // Codec weights run as float32 (reference checkpoint ships fp32).

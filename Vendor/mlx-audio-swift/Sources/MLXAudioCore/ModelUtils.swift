@@ -39,7 +39,7 @@ public enum ModelUtils {
     ) async throws -> URL {
         let client: HubClient
         if let token = hfToken, !token.isEmpty {
-            print("Using HuggingFace token from configuration")
+            MLXAudioLog.log("Using HuggingFace token from configuration")
             client = HubClient(host: HubClient.defaultHost, bearerToken: token, cache: cache)
         } else {
             client = HubClient(cache: cache)
@@ -94,15 +94,15 @@ public enum ModelUtils {
                 if FileManager.default.fileExists(atPath: configPath.path) {
                     if let configData = try? Data(contentsOf: configPath),
                        let _ = try? JSONSerialization.jsonObject(with: configData) {
-                        print("Using cached model at: \(modelDir.path)")
+                        MLXAudioLog.log("Using cached model at: \(modelDir.path)")
                         return modelDir
                     } else {
-                        print("Cached config.json is invalid, clearing cache...")
+                        MLXAudioLog.log("Cached config.json is invalid, clearing cache...")
                         Self.clearCaches(modelDir: modelDir, repoID: repoID, hubCache: cache)
                     }
                 }
             } else {
-                print("Cached model appears incomplete, clearing cache...")
+                MLXAudioLog.log("Cached model appears incomplete, clearing cache...")
                 Self.clearCaches(modelDir: modelDir, repoID: repoID, hubCache: cache)
             }
         }
@@ -119,7 +119,7 @@ public enum ModelUtils {
         ]
         allowedExtensions.formUnion(additionalMatchingPatterns)
 
-        print("Downloading model \(repoID)...")
+        MLXAudioLog.log("Downloading model \(repoID)...")
         _ = try await client.downloadSnapshot(
             of: repoID,
             kind: .model,
@@ -127,7 +127,7 @@ public enum ModelUtils {
             revision: "main",
             matching: Array(allowedExtensions),
             progressHandler: progressHandler ?? { progress in
-                print("\(progress.completedUnitCount)/\(progress.totalUnitCount) files")
+                MLXAudioLog.log("\(progress.completedUnitCount)/\(progress.totalUnitCount) files")
             }
         )
 
@@ -146,7 +146,7 @@ public enum ModelUtils {
             throw ModelUtilsError.incompleteDownload(repoID.description)
         }
 
-        print("Model downloaded to: \(modelDir.path)")
+        MLXAudioLog.log("Model downloaded to: \(modelDir.path)")
         return modelDir
     }
 
@@ -154,7 +154,7 @@ public enum ModelUtils {
         try? FileManager.default.removeItem(at: modelDir)
         let hubRepoDir = hubCache.repoDirectory(repo: repoID, kind: .model)
         if FileManager.default.fileExists(atPath: hubRepoDir.path) {
-            print("Clearing Hub cache at: \(hubRepoDir.path)")
+            MLXAudioLog.log("Clearing Hub cache at: \(hubRepoDir.path)")
             try? FileManager.default.removeItem(at: hubRepoDir)
         }
     }

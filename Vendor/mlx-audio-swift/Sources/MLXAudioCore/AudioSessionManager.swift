@@ -37,7 +37,7 @@ public class AudioSessionManager {
             // Log the current audio route for debugging
             let _ = AVAudioSession.sharedInstance().currentRoute
         } catch {
-            print("Audio session setup failed: \(error)")
+            MLXAudioLog.log("Audio session setup failed: \(error)")
         }
         #endif
         // No equivalent action needed for macOS
@@ -55,7 +55,7 @@ public class AudioSessionManager {
                 options: [.duckOthers, .mixWithOthers]
             )
         } catch {
-            print("Failed to reset audio session: \(error)")
+            MLXAudioLog.log("Failed to reset audio session: \(error)")
         }
         #endif
         // No equivalent action needed for macOS
@@ -79,7 +79,7 @@ public class AudioSessionManager {
         do {
             try AVAudioSession.sharedInstance().setActive(false)
         } catch {
-            print("Failed to deactivate audio session: \(error)")
+            MLXAudioLog.log("Failed to deactivate audio session: \(error)")
         }
         #endif
         // No equivalent action needed for macOS

@@ -10,6 +10,7 @@ import Foundation
 import MLX
 import MLXFast
 import MLXNN
+import MLXAudioCore
 @preconcurrency import MLXLMCommon
 
 // MARK: - Llama3 Scaled RoPE for T3
@@ -418,7 +419,7 @@ public class T3Model: Module {
         // Track generated tokens
         var generatedIds = [hp.startSpeechToken]
 
-        print("[T3-LLaMA] Starting generation (maxNewTokens=\(maxNewTokens), temp=\(temperature), topP=\(topP), minP=\(minP), cfg=\(cfgWeight))")
+        MLXAudioLog.log("[T3-LLaMA] Starting generation (maxNewTokens=\(maxNewTokens), temp=\(temperature), topP=\(topP), minP=\(minP), cfg=\(cfgWeight))")
         let genStart = CFAbsoluteTimeGetCurrent()
 
         // Generation loop
@@ -450,7 +451,7 @@ public class T3Model: Module {
             // Check EOS
             if nextTokenId == hp.stopSpeechToken {
                 let elapsed = CFAbsoluteTimeGetCurrent() - genStart
-                print("[T3-LLaMA] EOS at step \(step)/\(maxNewTokens) (\(generatedIds.count) tokens, \(String(format: "%.2f", elapsed))s)")
+                MLXAudioLog.log("[T3-LLaMA] EOS at step \(step)/\(maxNewTokens) (\(generatedIds.count) tokens, \(String(format: "%.2f", elapsed))s)")
                 generatedIds.append(nextTokenId)
                 break
             }
@@ -458,7 +459,7 @@ public class T3Model: Module {
 
             if step % 100 == 0 && step > 0 {
                 let elapsed = CFAbsoluteTimeGetCurrent() - genStart
-                print("[T3-LLaMA] Step \(step)/\(maxNewTokens) (\(generatedIds.count) tokens, \(String(format: "%.2f", elapsed))s)")
+                MLXAudioLog.log("[T3-LLaMA] Step \(step)/\(maxNewTokens) (\(generatedIds.count) tokens, \(String(format: "%.2f", elapsed))s)")
             }
 
             // Create embedding for next token with position embedding
@@ -478,9 +479,9 @@ public class T3Model: Module {
         let uniqueCount = Set(generatedIds).count
         let first10 = Array(generatedIds.prefix(10))
         let last10 = Array(generatedIds.suffix(10))
-        print("[T3-LLaMA] Generation complete: \(generatedIds.count) tokens (\(uniqueCount) unique) in \(String(format: "%.2f", totalElapsed))s")
-        print("[T3-LLaMA]   first10=\(first10), last10=\(last10)")
-        print("[T3-LLaMA]   stopToken=\(hp.stopSpeechToken), startToken=\(hp.startSpeechToken)")
+        MLXAudioLog.log("[T3-LLaMA] Generation complete: \(generatedIds.count) tokens (\(uniqueCount) unique) in \(String(format: "%.2f", totalElapsed))s")
+        MLXAudioLog.log("[T3-LLaMA]   first10=\(first10), last10=\(last10)")
+        MLXAudioLog.log("[T3-LLaMA]   stopToken=\(hp.stopSpeechToken), startToken=\(hp.startSpeechToken)")
         return MLXArray(generatedIds.map { Int32($0) }).reshaped([1, -1])
     }
 }

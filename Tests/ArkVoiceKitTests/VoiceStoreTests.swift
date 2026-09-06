@@ -3,7 +3,7 @@ import MLX
 import MLXAudioTTS
 import Testing
 
-@testable import ArkVoiceCLI
+import ArkVoiceKit
 
 @Suite struct VoiceStoreTests {
   @Test(

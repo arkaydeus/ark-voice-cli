@@ -868,7 +868,7 @@ public class GraniteSpeechModel: Module {
 
         let (inputFeatures, numAudioTokens) = extractFeatures(audio)
 
-        if verbose { print("Encoding audio...") }
+        if verbose { MLXAudioLog.log("Encoding audio...") }
         let audioFeatures = getAudioFeatures(inputFeatures)
         eval(audioFeatures)
 
@@ -896,7 +896,7 @@ public class GraniteSpeechModel: Module {
             if ctx.isEOS(nextToken) { break }
             generatedTokens.append(nextToken)
 
-            if verbose { print(ctx.decode(nextToken), terminator: "") }
+            if verbose { MLXAudioLog.log(ctx.decode(nextToken), terminator: "") }
 
             let nextTokenArray = MLXArray([Int32(nextToken)]).expandedDimensions(axis: 0)
             let newLogits = languageModel(inputs: nextTokenArray, cache: cache)
@@ -907,7 +907,7 @@ public class GraniteSpeechModel: Module {
             )
         }
 
-        if verbose { print() }
+        if verbose { MLXAudioLog.log() }
 
         Memory.clearCache()
 
