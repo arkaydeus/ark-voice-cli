@@ -56,6 +56,30 @@ import Testing
     )
   }
 
+  @Test func transcribeSelectsARecognizer() throws {
+    #expect(
+      try CLIParser.parse(["stt", "clip.wav", "--model", "parakeet-ultra"])
+        == .transcribe(TranscribeOptions(input: .file("clip.wav"), model: .parakeetUltra))
+    )
+    #expect(
+      try CLIParser.parse(["stt", "-m", "qwen", "clip.wav", "-o", "clip.txt"])
+        == .transcribe(TranscribeOptions(input: .file("clip.wav"), output: "clip.txt", model: .qwen))
+    )
+    #expect(
+      try CLIParser.parse(["stt", "clip.wav"])
+        == .transcribe(TranscribeOptions(input: .file("clip.wav"), model: nil))
+    )
+    assertParseError(["stt", "clip.wav", "--model", "whisper"], contains: "Unknown --model 'whisper'")
+    assertParseError(["stt", "clip.wav", "--model"], contains: "--model requires one of")
+  }
+
+  @Test func downloadAcceptsEachRecognizerByName() throws {
+    #expect(try CLIParser.parse(["download", "parakeet-ultra"]) == .download(.parakeetUltra))
+    #expect(try CLIParser.parse(["download", "qwen"]) == .download(.qwen))
+    #expect(try CLIParser.parse(["download", "parakeet"]) == .download(.parakeet))
+    assertParseError(["download", "whisper"], contains: "parakeet-ultra")
+  }
+
   @Test func speakSourcesOptionsAndDefaults() throws {
     #expect(
       try CLIParser.parse(["tts", "hello"]) == .speak(SpeakOptions(text: .literal("hello")))
@@ -143,6 +167,11 @@ import Testing
       try CLIParser.parse(["serve", "--idle-unload", "off", "--idle-exit", "900"])
         == .serve(ServeOptions(idleUnloadSeconds: nil, idleExitSeconds: 900))
     )
+    #expect(
+      try CLIParser.parse(["serve", "--stt-model", "parakeet-ultra"])
+        == .serve(ServeOptions(transcriptionModel: .parakeetUltra))
+    )
+    assertParseError(["serve", "--stt-model", "tiny"], contains: "Unknown --stt-model")
     assertParseError(["serve", "--idle-exit", "-3"], contains: "positive number of seconds")
     assertParseError(["serve", "--nope"], contains: "Unknown serve option")
   }
@@ -155,6 +184,11 @@ import Testing
     #expect(
       try CLIParser.parse(["client", "stt", "clip.wav"])
         == .client(.stt(TranscribeOptions(input: .file("clip.wav")), socketPath: nil))
+    )
+    #expect(
+      try CLIParser.parse(["client", "stt", "clip.wav", "--model", "qwen", "-s", "/tmp/a.sock"])
+        == .client(
+          .stt(TranscribeOptions(input: .file("clip.wav"), model: .qwen), socketPath: "/tmp/a.sock"))
     )
     #expect(try CLIParser.parse(["client", "status"]) == .client(.status(socketPath: nil)))
     #expect(try CLIParser.parse(["client", "unload"]) == .client(.unload(socketPath: nil)))

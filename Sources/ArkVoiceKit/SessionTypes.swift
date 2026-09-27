@@ -16,6 +16,32 @@ public enum ProgressEvent: Sendable {
   case synthesisChunkStarted(index: Int, count: Int, characters: Int)
 }
 
+/// A speech recognizer ``VoiceSession`` can transcribe with.
+///
+/// Only one recognizer is resident at a time; asking for another releases the
+/// current one first, so installing several never multiplies memory use.
+public enum TranscriptionModel: String, Sendable, Codable, CaseIterable {
+  /// Parakeet TDT 0.6B v2 on MLX. English only; streams partial text.
+  case parakeet
+  /// Parakeet Ultra on Core ML (Neural Engine). 25 European languages; the
+  /// transcript arrives in one piece.
+  case parakeetUltra = "parakeet-ultra"
+  /// Qwen3-ASR 1.7B on MLX. Multilingual; streams partial text.
+  case qwen
+
+  /// Whether the recognizer runs on MLX and so needs its Metal runtime.
+  public var usesMLX: Bool {
+    switch self {
+    case .parakeet, .qwen: true
+    case .parakeetUltra: false
+    }
+  }
+
+  public static var optionsDescription: String {
+    allCases.map(\.rawValue).joined(separator: ", ")
+  }
+}
+
 /// Everything a ``VoiceSession`` needs that it must not discover for itself.
 ///
 /// Model location, credentials, and diagnostics are injected rather than read
@@ -35,6 +61,8 @@ public struct SessionConfiguration: Sendable {
   public var maximumChunkCharacters: Int
   /// Silence inserted between synthesized chunks, in seconds.
   public var silenceBetweenChunks: Double
+  /// Recognizer used when a transcription call does not name one.
+  public var transcriptionModel: TranscriptionModel
   /// Receives progress and diagnostics. `nil` discards them.
   public var progress: (@Sendable (ProgressEvent) -> Void)?
 
@@ -44,6 +72,7 @@ public struct SessionConfiguration: Sendable {
     metallibURL: URL? = nil,
     maximumChunkCharacters: Int = 300,
     silenceBetweenChunks: Double = 0.15,
+    transcriptionModel: TranscriptionModel = .parakeet,
     progress: (@Sendable (ProgressEvent) -> Void)? = nil
   ) {
     self.modelRoot = modelRoot
@@ -51,13 +80,14 @@ public struct SessionConfiguration: Sendable {
     self.metallibURL = metallibURL
     self.maximumChunkCharacters = maximumChunkCharacters
     self.silenceBetweenChunks = silenceBetweenChunks
+    self.transcriptionModel = transcriptionModel
     self.progress = progress
   }
 
   /// Configuration that picks up `HF_TOKEN` from the environment.
   ///
   /// Reading the environment is a host decision, so it is opt-in rather than
-  /// the behaviour of ``init(modelRoot:hfToken:metallibURL:maximumChunkCharacters:silenceBetweenChunks:progress:)``.
+  /// the behaviour of ``init(modelRoot:hfToken:metallibURL:maximumChunkCharacters:silenceBetweenChunks:transcriptionModel:progress:)``.
   public static func fromEnvironment(
     progress: (@Sendable (ProgressEvent) -> Void)? = nil
   ) -> SessionConfiguration {

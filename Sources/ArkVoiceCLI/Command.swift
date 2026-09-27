@@ -41,19 +41,23 @@ struct TranscribeOptions: Equatable {
   /// Set when stdin carries headerless PCM rather than a container.
   var inputFormat: PCMSampleFormat?
   var inputSampleRate: Int
+  /// Recognizer to use; `nil` leaves the choice to the session or server.
+  var model: TranscriptionModel?
 
   init(
     input: AudioSource,
     output: String? = nil,
     stream: Bool = false,
     inputFormat: PCMSampleFormat? = nil,
-    inputSampleRate: Int = VoiceSession.transcriptionSampleRate
+    inputSampleRate: Int = VoiceSession.transcriptionSampleRate,
+    model: TranscriptionModel? = nil
   ) {
     self.input = input
     self.output = output
     self.stream = stream
     self.inputFormat = inputFormat
     self.inputSampleRate = inputSampleRate
+    self.model = model
   }
 }
 
@@ -90,15 +94,19 @@ struct ServeOptions: Equatable {
   var idleUnloadSeconds: Double?
   /// Exit after this many idle seconds; `nil` runs until stopped.
   var idleExitSeconds: Double?
+  /// Recognizer for `stt` requests that do not name one.
+  var transcriptionModel: TranscriptionModel?
 
   init(
     socketPath: String? = nil,
     idleUnloadSeconds: Double? = 300,
-    idleExitSeconds: Double? = nil
+    idleExitSeconds: Double? = nil,
+    transcriptionModel: TranscriptionModel? = nil
   ) {
     self.socketPath = socketPath
     self.idleUnloadSeconds = idleUnloadSeconds
     self.idleExitSeconds = idleExitSeconds
+    self.transcriptionModel = transcriptionModel
   }
 }
 
@@ -156,7 +164,8 @@ enum CLIParser {
   private static func parseDownload(_ arguments: [String]) throws -> Command {
     if arguments.isEmpty { return .download(.all) }
     guard arguments.count == 1, let selection = ModelSelection(rawValue: arguments[0]) else {
-      throw CLIParseError.message("Usage: ark-voice download [all|stt|tts]")
+      throw CLIParseError.message(
+        "Usage: ark-voice download [\(ModelSelection.optionsDescription)]")
     }
     return .download(selection)
   }
@@ -167,11 +176,15 @@ enum CLIParser {
     var stream = false
     var inputFormat: PCMSampleFormat?
     var inputSampleRate: Int?
+    var model: TranscriptionModel?
     var index = 0
 
     while index < arguments.count {
       let argument = arguments[index]
       switch argument {
+      case "--model", "-m":
+        index += 1
+        model = try parseTranscriptionModel(arguments, at: index, option: "--model")
       case "--output", "-o":
         index += 1
         guard index < arguments.count else {
@@ -215,7 +228,8 @@ enum CLIParser {
 
     guard let input else {
       throw CLIParseError.message(
-        "Usage: ark-voice stt <audio.{wav,aac,m4a,mp4}|-> [--output transcript.txt] [--stream]")
+        "Usage: ark-voice stt <audio.{wav,aac,m4a,mp4}|-> [--output transcript.txt] [--stream] [--model name]"
+      )
     }
     guard input == "-" || inputFormat == nil else {
       throw CLIParseError.message("--input-format only applies when reading audio from stdin.")
@@ -226,8 +240,25 @@ enum CLIParser {
       output: output,
       stream: stream,
       inputFormat: inputFormat,
-      inputSampleRate: inputSampleRate ?? VoiceSession.transcriptionSampleRate
+      inputSampleRate: inputSampleRate ?? VoiceSession.transcriptionSampleRate,
+      model: model
     )
+  }
+
+  private static func parseTranscriptionModel(
+    _ arguments: [String],
+    at index: Int,
+    option: String
+  ) throws -> TranscriptionModel {
+    guard index < arguments.count else {
+      throw CLIParseError.message(
+        "\(option) requires one of \(TranscriptionModel.optionsDescription).")
+    }
+    guard let model = TranscriptionModel(rawValue: arguments[index]) else {
+      throw CLIParseError.message(
+        "Unknown \(option) '\(arguments[index])'. Use \(TranscriptionModel.optionsDescription).")
+    }
+    return model
   }
 
   private static func parseSpeak(_ arguments: [String]) throws -> SpeakOptions {
@@ -381,6 +412,10 @@ enum CLIParser {
           throw CLIParseError.message("--idle-exit requires seconds, or 'off'.")
         }
         options.idleExitSeconds = try parseInterval(arguments[index], option: "--idle-exit")
+      case "--stt-model":
+        index += 1
+        options.transcriptionModel = try parseTranscriptionModel(
+          arguments, at: index, option: "--stt-model")
       case "--foreground":
         // The server always runs in the foreground; accepted so launchd-style
         // invocations do not have to special-case it.

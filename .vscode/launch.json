@@ -1,1 +1,24 @@
-{}
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "name": "Debug ark-voice",
+            "target": "ark-voice",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug ark-voice"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "name": "Release ark-voice",
+            "target": "ark-voice",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release ark-voice"
+        }
+    ]
+}

@@ -5,28 +5,35 @@ import Foundation
 let arkVoiceVersion = "0.2.0"
 
 let usage = """
-  ark-voice — local English speech on Apple Silicon
+  ark-voice — local speech on Apple Silicon
 
   USAGE
-    ark-voice download [all|stt|tts]
-    ark-voice stt <audio|-> [--output transcript.txt] [--stream]
+    ark-voice download [all|stt|tts|parakeet|parakeet-ultra|qwen]
+    ark-voice stt <audio|-> [--output transcript.txt] [--stream] [--model name]
     ark-voice tts [--] <text> [--output speech.{wav,m4a,aac}|-] [--reference voice.wav|--voice name]
     ark-voice tts --file <text-file|-> [--output speech.{wav,m4a,aac}|-]
     ark-voice voice create <name> <reference-audio>
     ark-voice voices
     ark-voice models
-    ark-voice serve [--socket path] [--idle-unload seconds|off] [--idle-exit seconds|off]
+    ark-voice serve [--socket path] [--idle-unload seconds|off] [--idle-exit seconds|off] [--stt-model name]
     ark-voice client <tts|stt|voices|status|unload> [--socket path] ...
 
   COMMANDS
-    download    Download models to ~/.ark-voice-cli (both models by default)
-    stt         Transcribe English audio; accepts wav, aac, m4a, mp4, or stdin
+    download    Download models to ~/.ark-voice-cli (default STT and TTS models by default)
+    stt         Transcribe audio; accepts wav, aac, m4a, mp4, or stdin
     tts         Synthesize English speech to WAV, M4A, ADTS AAC, or stdout
     voice       Create a reusable voice profile from reference audio
     voices      List saved voice profiles
     models      Show the configured models and local download status
     serve       Keep models resident and serve requests over a Unix socket
     client      Run a request against a server started with 'ark-voice serve'
+
+  SPEECH RECOGNITION MODELS (--model)
+    parakeet        Parakeet TDT v2 on MLX. English. The default.
+    parakeet-ultra  Parakeet Ultra on Core ML (Neural Engine). 25 European
+                    languages; low memory; text arrives all at once.
+    qwen            Qwen3-ASR 1.7B on MLX. Multilingual; about 2.5 GB.
+    Optional models are downloaded by name: 'ark-voice download qwen'.
 
   ALIASES
     transcribe  Alias for stt
@@ -47,6 +54,8 @@ let usage = """
     ark-voice download
     ark-voice stt meeting.m4a
     ark-voice stt clip.mp4 -o transcript.txt --stream
+    ark-voice download parakeet-ultra
+    ark-voice stt interview.m4a --model parakeet-ultra
     ark-voice tts "Hello from my Mac" -o hello.wav
     ark-voice tts "Hello" -o - | ffplay -autoexit -nodisp -
     ark-voice tts -- "-5 degrees outside" -o weather.wav

@@ -48,6 +48,10 @@ public struct ClientMessage: Codable, Sendable {
   public var format: PCMSampleFormat?
   /// Sample rate of the PCM frames the client is about to send.
   public var sampleRate: Int?
+  /// Recognizer for `stt`, as a ``TranscriptionModel`` raw value. Omit it for
+  /// the server's default. A string rather than the enum so an unknown name is
+  /// reported as such instead of failing the whole message.
+  public var model: String?
 
   public init(
     op: ClientOperation,
@@ -56,7 +60,8 @@ public struct ClientMessage: Codable, Sendable {
     voice: String? = nil,
     name: String? = nil,
     format: PCMSampleFormat? = nil,
-    sampleRate: Int? = nil
+    sampleRate: Int? = nil,
+    model: String? = nil
   ) {
     self.op = op
     self.version = version
@@ -65,6 +70,7 @@ public struct ClientMessage: Codable, Sendable {
     self.name = name
     self.format = format
     self.sampleRate = sampleRate
+    self.model = model
   }
 }
 
@@ -109,6 +115,8 @@ public struct ServerMessage: Codable, Sendable {
   public var seconds: Double?
   public var synthesisModelLoaded: Bool?
   public var transcriptionModelLoaded: Bool?
+  /// Which recognizer is resident, when one is.
+  public var transcriptionModel: String?
   public var requestsServed: Int?
   public var uptimeSeconds: Double?
 

@@ -100,15 +100,19 @@ public final class VoiceClient {
   }
 
   /// Transcribes `samples`, reporting incremental text through `onPartial`.
+  ///
+  /// `model` names the recognizer; `nil` uses the server's default.
   public func transcribe(
     samples: [Float],
     sampleRate: Int = VoiceSession.transcriptionSampleRate,
     format: PCMSampleFormat = .s16le,
+    model: TranscriptionModel? = nil,
     onPartial: (String) -> Void = { _ in }
   ) throws -> String {
     var request = ClientMessage(op: .stt)
     request.format = format
     request.sampleRate = sampleRate
+    request.model = model?.rawValue
     let requestID = takeRequestID()
     try send(request, requestID: requestID)
     try sendAudio(samples, format: format, requestID: requestID)

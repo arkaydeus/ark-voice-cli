@@ -177,11 +177,12 @@ public final class VoiceServer: @unchecked Sendable {
     stateLock.withLock { bufferedSamples = max(0, bufferedSamples - count) }
   }
 
-  fileprivate func statusMessage() -> ServerMessage {
+  func statusMessage() -> ServerMessage {
     var message = ServerMessage(event: .status)
     message.version = arkVoiceProtocolVersion
     message.synthesisModelLoaded = session.isSynthesisModelLoaded
     message.transcriptionModelLoaded = session.isTranscriptionModelLoaded
+    message.transcriptionModel = session.loadedTranscriptionModel?.rawValue
     message.requestsServed = stateLock.withLock { requestsServed }
     message.uptimeSeconds = Date().timeIntervalSince(startedAt)
     return message
@@ -274,12 +275,15 @@ private final class ConnectionHandler: @unchecked Sendable {
     var format: PCMSampleFormat
     var sampleRate: Int
     var name: String?
+    var model: TranscriptionModel?
     var samples: [Float] = []
   }
 
   private let connection: SocketConnection
   private let session: VoiceSession
-  private unowned let server: VoiceServer
+  // The reader can outlive `run()` while the socket is closing. Keep the
+  // server alive until `close()` removes this handler from its connection set.
+  private let server: VoiceServer
   private let audioBufferLimits: AudioBufferLimits
 
   private let stateLock = NSLock()
@@ -436,12 +440,25 @@ private final class ConnectionHandler: @unchecked Sendable {
       }
 
     case .stt:
+      var model: TranscriptionModel?
+      if let name = message.model {
+        guard let known = TranscriptionModel(rawValue: name) else {
+          send(.error, requestID: requestID) {
+            $0.code = .badRequest
+            $0.message =
+              "Unknown model '\(name)'. Use \(TranscriptionModel.optionsDescription)."
+          }
+          return
+        }
+        model = known
+      }
       beginPendingAudio(
         .stt,
         requestID: requestID,
         format: message.format ?? .s16le,
         sampleRate: message.sampleRate ?? VoiceSession.transcriptionSampleRate,
-        name: nil
+        name: nil,
+        model: model
       )
 
     case .createVoice:
@@ -457,7 +474,8 @@ private final class ConnectionHandler: @unchecked Sendable {
         requestID: requestID,
         format: message.format ?? .s16le,
         sampleRate: message.sampleRate ?? VoiceSession.synthesisSampleRate,
-        name: name
+        name: name,
+        model: nil
       )
 
     case .end:
@@ -548,7 +566,8 @@ private final class ConnectionHandler: @unchecked Sendable {
     requestID: UInt32,
     format: PCMSampleFormat,
     sampleRate: Int,
-    name: String?
+    name: String?,
+    model: TranscriptionModel?
   ) {
     guard sampleRate > 0 else {
       send(.error, requestID: requestID) {
@@ -571,7 +590,8 @@ private final class ConnectionHandler: @unchecked Sendable {
         operation: operation,
         format: format,
         sampleRate: sampleRate,
-        name: name
+        name: name,
+        model: model
       )
       return nil
     }
@@ -750,7 +770,7 @@ private final class ConnectionHandler: @unchecked Sendable {
         from: audio.sampleRate,
         to: VoiceSession.transcriptionSampleRate
       )
-      for try await event in session.transcribe(samples: samples) {
+      for try await event in session.transcribe(samples: samples, model: audio.model) {
         try Task.checkCancellation()
         switch event {
         case .partial(let text):

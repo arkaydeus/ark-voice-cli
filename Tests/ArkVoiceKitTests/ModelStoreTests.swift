@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 import Testing
 
@@ -11,6 +12,20 @@ import ArkVoiceKit
       ModelStore.selected(.tts).map(\.repository)
         == [ModelStore.chatterbox.repository, ModelStore.s3Tokenizer.repository]
     )
+
+    #expect(ModelStore.selected(.parakeetUltra).map(\.repository) == [ModelStore.parakeetUltra.repository])
+    #expect(ModelStore.selected(.qwen).map(\.repository) == [ModelStore.qwen3ASR.repository])
+    // The optional recognizers are large, so a bare download leaves them out.
+    #expect(
+      ModelStore.selected(.all).map(\.repository)
+        == [ModelStore.parakeet, ModelStore.chatterbox, ModelStore.s3Tokenizer].map(\.repository)
+    )
+    for model in TranscriptionModel.allCases {
+      #expect(
+        ModelStore.selected(ModelSelection(model)).map(\.repository)
+          == [ModelStore.spec(for: model).repository]
+      )
+    }
 
     let root = URL(fileURLWithPath: "/tmp/ark-voice-test-root", isDirectory: true)
     #expect(
@@ -103,9 +118,96 @@ import ArkVoiceKit
     )
   }
 
+  @Test func coreMLModelsDownloadOnlyTheirListedFiles() {
+    let ultra = ModelStore.parakeetUltra
+    #expect(ultra.downloadPatterns == ultra.artifacts.map(\.path))
+    #expect(ultra.artifacts.contains { $0.path == "Encoder.mlmodelc/weights/weight.bin" })
+    #expect(ModelStore.qwen3ASR.downloadPatterns == ModelSpec.defaultDownloadPatterns)
+    for artifact in ultra.artifacts {
+      #expect(ultra.downloadPatterns.contains { fnmatch($0, artifact.path, 0) == 0 })
+    }
+    #expect(!ultra.downloadPatterns.contains { fnmatch($0, "unrelated/weight.bin", 0) == 0 })
+  }
+
+  @Test func nestedArtifactsAreValidated() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("ark-voice-model-tests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let model = ModelSpec(
+      title: "Nested",
+      repository: "test/nested",
+      revision: "0123456789abcdef",
+      purpose: "Testing",
+      artifacts: [ModelArtifact(path: "Encoder.mlmodelc/weights/weight.bin", byteCount: 3, sha256: nil)]
+    )
+    let directory = ModelStore.modelDirectory(for: model, root: root)
+    let weights = directory.appendingPathComponent("Encoder.mlmodelc/weights/weight.bin")
+    try FileManager.default.createDirectory(
+      at: weights.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data([1, 2, 3]).write(to: weights)
+    try ModelStore.writeCompletionMarker(for: model, in: directory)
+    #expect(ModelStore.isDownloaded(model, root: root))
+
+    try Data([1]).write(to: weights)
+    #expect(!ModelStore.isDownloaded(model, root: root))
+  }
+
+  @Test func missingModelsNameTheDownloadThatFetchesThem() {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("ark-voice-empty-\(UUID().uuidString)", isDirectory: true)
+    func message(_ models: [ModelSpec]) -> String? {
+      let error = #expect(throws: ModelStoreError.self) {
+        try ModelStore.requireDownloaded(models, root: root)
+      }
+      return error?.localizedDescription
+    }
+    #expect(message([ModelStore.parakeetUltra])?.contains("'ark-voice download parakeet-ultra'") == true)
+    #expect(message([ModelStore.qwen3ASR])?.contains("'ark-voice download qwen'") == true)
+    #expect(
+      message([ModelStore.chatterbox, ModelStore.s3Tokenizer])?.contains("'ark-voice download tts'")
+        == true)
+    let mixedUltra = message([ModelStore.parakeet, ModelStore.parakeetUltra])
+    #expect(mixedUltra?.contains("'ark-voice download parakeet'") == true)
+    #expect(mixedUltra?.contains("'ark-voice download parakeet-ultra'") == true)
+    let mixedQwen = message([ModelStore.parakeet, ModelStore.qwen3ASR])
+    #expect(mixedQwen?.contains("'ark-voice download parakeet'") == true)
+    #expect(mixedQwen?.contains("'ark-voice download qwen'") == true)
+  }
+
+  @Test func alreadyDownloadedModelReportsOneCompletion() async throws {
+    let fixture = try ModelFixture()
+    defer { fixture.remove() }
+    try fixture.writeValidFiles()
+    try ModelStore.writeCompletionMarker(for: fixture.model, in: fixture.directory)
+    let events = DownloadEvents()
+    try await ModelStore.download([fixture.model], root: fixture.root) { event in
+      events.record(event)
+    }
+    #expect(events.finished == 1)
+    #expect(events.started == 0)
+  }
+
   private func sha256(_ data: Data) -> String {
     SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
   }
+}
+
+private final class DownloadEvents: @unchecked Sendable {
+  private let lock = NSLock()
+  private var counts = (started: 0, finished: 0)
+
+  func record(_ event: ProgressEvent) {
+    lock.withLock {
+      switch event {
+      case .modelDownloadStarted: counts.started += 1
+      case .modelDownloadFinished: counts.finished += 1
+      default: break
+      }
+    }
+  }
+
+  var started: Int { lock.withLock { counts.started } }
+  var finished: Int { lock.withLock { counts.finished } }
 }
 
 private struct ModelFixture {

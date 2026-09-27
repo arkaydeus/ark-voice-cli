@@ -16,6 +16,7 @@ public enum VoiceEngineError: LocalizedError {
   case invalidSampleRate(Int)
   case malformedSampleData(String)
   case invalidConfiguration(String)
+  case transcriptionFailed(String)
 
   public var errorDescription: String? {
     switch self {
@@ -43,6 +44,8 @@ public enum VoiceEngineError: LocalizedError {
       "Malformed PCM data: \(details)"
     case .invalidConfiguration(let details):
       "Invalid session configuration: \(details)"
+    case .transcriptionFailed(let details):
+      "Transcription failed: \(details)"
     }
   }
 }

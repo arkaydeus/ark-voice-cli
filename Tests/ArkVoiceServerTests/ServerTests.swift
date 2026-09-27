@@ -23,9 +23,36 @@ import ArkVoiceKit
         #expect(status.version == arkVoiceProtocolVersion)
         #expect(status.synthesisModelLoaded == false)
         #expect(status.transcriptionModelLoaded == false)
+        #expect(status.transcriptionModel == nil)
 
         #expect(try client.voices().isEmpty)
         try client.unload()
+      }
+    }
+  }
+
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["ARK_VOICE_TEST_MODELS"] == "1"))
+  func statusNamesResidentRecognizer() async throws {
+    let session = VoiceSession()
+    try await session.preloadTranscriptionModel(.parakeetUltra)
+    let server = VoiceServer(session: session, configuration: VoiceServer.Configuration(
+      socketPath: Self.temporarySocketPath()))
+    let status = server.statusMessage()
+    #expect(status.transcriptionModelLoaded == true)
+    #expect(status.transcriptionModel == "parakeet-ultra")
+  }
+
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["ARK_VOICE_TEST_MODELS"] == "1"))
+  func liveStatusNamesResidentRecognizerAndStopsCleanly() async throws {
+    let session = VoiceSession()
+    try await session.preloadTranscriptionModel(.parakeetUltra)
+    try await withServer(preloadedSession: session) { socketPath in
+      try await onThread {
+        let client = try VoiceClient(socketPath: socketPath)
+        defer { client.close() }
+        let status = try client.status()
+        #expect(status.transcriptionModelLoaded == true)
+        #expect(status.transcriptionModel == "parakeet-ultra")
       }
     }
   }
@@ -173,6 +200,63 @@ import ArkVoiceKit
         let reply = try readMessage(on: connection, requestID: 8)
         #expect(reply.event == .error)
         #expect(reply.code == .modelsMissing || reply.code == .failed)
+      }
+    }
+  }
+
+  @Test func transcriptionRequestsMayNameARecognizer() async throws {
+    try await withServer { socketPath in
+      try await onThread {
+        let connection = try connectToSocket(path: socketPath)
+        defer { connection.close() }
+        try handshake(on: connection)
+
+        var unknown = ClientMessage(op: .stt)
+        unknown.model = "whisper"
+        try send(unknown, requestID: 5, on: connection)
+        let refusal = try readMessage(on: connection, requestID: 5)
+        #expect(refusal.event == .error)
+        #expect(refusal.code == .badRequest)
+        #expect(refusal.message?.contains("parakeet-ultra") == true)
+
+        // A known recognizer is accepted, then fails only for want of weights,
+        // naming the download that would fetch them.
+        var ultra = ClientMessage(op: .stt)
+        ultra.model = TranscriptionModel.parakeetUltra.rawValue
+        try send(ultra, requestID: 6, on: connection)
+        connection.sendSynchronously(
+          Frame(
+            kind: .pcm,
+            requestID: 6,
+            payload: AudioDecoding.data(from: [Float](repeating: 0.1, count: 1_600), format: .s16le)
+          )
+        )
+        try send(ClientMessage(op: .end), requestID: 6, on: connection)
+        let missing = try readMessage(on: connection, requestID: 6)
+        #expect(missing.code == .modelsMissing)
+        #expect(missing.message?.contains("download parakeet-ultra") == true)
+      }
+    }
+  }
+
+  @Test func configuredDefaultRecognizerAppliesWhenRequestOmitsModel() async throws {
+    try await withServer(transcriptionModel: .parakeetUltra) { socketPath in
+      try await onThread {
+        let connection = try connectToSocket(path: socketPath)
+        defer { connection.close() }
+        try handshake(on: connection)
+        var request = ClientMessage(op: .stt)
+        request.format = .s16le
+        request.sampleRate = 16_000
+        try send(request, requestID: 91, on: connection)
+        connection.sendSynchronously(Frame(
+          kind: .pcm, requestID: 91,
+          payload: AudioDecoding.data(from: [Float](repeating: 0.1, count: 1_600), format: .s16le)
+        ))
+        try send(ClientMessage(op: .end), requestID: 91, on: connection)
+        let missing = try readMessage(on: connection, requestID: 91)
+        #expect(missing.code == .modelsMissing)
+        #expect(missing.message?.contains("download parakeet-ultra") == true)
       }
     }
   }
@@ -610,6 +694,8 @@ import ArkVoiceKit
   private func withServer(
     idleExitSeconds: Double? = nil,
     audioBufferLimits: AudioBufferLimits = AudioBufferLimits(),
+    transcriptionModel: TranscriptionModel = .parakeet,
+    preloadedSession: VoiceSession? = nil,
     _ body: @escaping @Sendable (String) async throws -> Void
   ) async throws {
     let modelRoot = FileManager.default.temporaryDirectory
@@ -620,7 +706,8 @@ import ArkVoiceKit
       Self.removeSocketArtifacts(socketPath)
     }
 
-    let session = VoiceSession(configuration: SessionConfiguration(modelRoot: modelRoot))
+    let session = preloadedSession ?? VoiceSession(configuration: SessionConfiguration(
+      modelRoot: modelRoot, transcriptionModel: transcriptionModel))
     var configuration = VoiceServer.Configuration(
       socketPath: socketPath,
       idleUnloadSeconds: nil,

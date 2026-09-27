@@ -39,8 +39,10 @@ enum CLIRunner {
     }
   }
 
-  static func makeSession() -> VoiceSession {
-    VoiceSession(configuration: SessionConfiguration.fromEnvironment(progress: reportProgress))
+  static func makeSession(transcriptionModel: TranscriptionModel? = nil) -> VoiceSession {
+    var configuration = SessionConfiguration.fromEnvironment(progress: reportProgress)
+    if let transcriptionModel { configuration.transcriptionModel = transcriptionModel }
+    return VoiceSession(configuration: configuration)
   }
 
   // MARK: - Local commands
@@ -51,6 +53,11 @@ enum CLIRunner {
       let status = ModelStore.isDownloaded(model) ? "downloaded" : "not downloaded"
       writeStandardOutput("\(model.title) [\(status)]\n")
       writeStandardOutput("  \(model.repository) — \(model.purpose)\n")
+      if let recognizer = TranscriptionModel.allCases.first(where: {
+        ModelStore.spec(for: $0).repository == model.repository
+      }) {
+        writeStandardOutput("  stt --model \(recognizer.rawValue)\n")
+      }
     }
   }
 
@@ -99,7 +106,7 @@ enum CLIRunner {
     let session = makeSession()
 
     var transcript = ""
-    for try await event in session.transcribe(samples: samples) {
+    for try await event in session.transcribe(samples: samples, model: options.model) {
       switch event {
       case .partial(let delta):
         emitPartialTranscript(delta, options: options)
@@ -132,7 +139,7 @@ enum CLIRunner {
   // MARK: - Server
 
   static func serve(_ options: ServeOptions) async throws {
-    let session = makeSession()
+    let session = makeSession(transcriptionModel: options.transcriptionModel)
     let configuration = VoiceServer.Configuration(
       socketPath: options.socketPath ?? defaultSocketPath(),
       idleUnloadSeconds: options.idleUnloadSeconds,
@@ -176,22 +183,24 @@ enum CLIRunner {
       let client = try connect(socketPath)
       defer { client.close() }
       let status = try client.status()
-      writeStandardOutput(
-        """
-        protocol: \(status.version ?? 0)
-        synthesis model loaded: \(status.synthesisModelLoaded ?? false)
-        transcription model loaded: \(status.transcriptionModelLoaded ?? false)
-        requests served: \(status.requestsServed ?? 0)
-        uptime: \(Int(status.uptimeSeconds ?? 0))s
-
-        """
-      )
+      writeStandardOutput(renderStatus(status))
     case .unload(let socketPath):
       let client = try connect(socketPath)
       defer { client.close() }
       try client.unload()
       writeStandardError("Server released its models.\n")
     }
+  }
+
+  static func renderStatus(_ status: ServerMessage) -> String {
+    """
+    protocol: \(status.version ?? 0)
+    synthesis model loaded: \(status.synthesisModelLoaded ?? false)
+    transcription model loaded: \(status.transcriptionModel ?? (status.transcriptionModelLoaded == true ? "yes" : "none"))
+    requests served: \(status.requestsServed ?? 0)
+    uptime: \(Int(status.uptimeSeconds ?? 0))s
+
+    """
   }
 
   private static func connect(_ socketPath: String?) throws -> VoiceClient {
@@ -238,7 +247,7 @@ enum CLIRunner {
     let client = try connect(socketPath)
     defer { client.close() }
 
-    let transcript = try client.transcribe(samples: samples) { delta in
+    let transcript = try client.transcribe(samples: samples, model: options.model) { delta in
       emitPartialTranscript(delta, options: options)
     }
     if options.stream, options.output == nil { writeStandardOutput("\n") }
