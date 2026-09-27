@@ -8,6 +8,10 @@ and every frame carries the request it belongs to.
     ark-voice serve &
     ./Scripts/client.py speak "Hello from Python" out.wav
     ./Scripts/client.py transcribe recording.wav
+    ./Scripts/client.py transcribe recording.wav parakeet-ultra
+
+The socket defaults to ~/.ark-voice-cli/ark-voice.sock; set ARK_VOICE_SOCKET
+to use another.
 """
 
 import json
@@ -104,10 +108,11 @@ class ArkVoice:
         )
         return rate, pcm
 
-    def transcribe(self, pcm, sample_rate=TRANSCRIPTION_RATE, sample_format="s16le"):
-        events, _ = self.request(
-            {"op": "stt", "format": sample_format, "sampleRate": sample_rate}, audio=pcm
-        )
+    def transcribe(self, pcm, sample_rate=TRANSCRIPTION_RATE, sample_format="s16le", model=None):
+        message = {"op": "stt", "format": sample_format, "sampleRate": sample_rate}
+        if model:
+            message["model"] = model
+        events, _ = self.request(message, audio=pcm)
         return next((e["text"] for e in events if e["event"] == "final"), "")
 
     def voices(self):
@@ -142,7 +147,8 @@ def main(argv):
         print(destination)
     elif command == "transcribe":
         rate, pcm = read_wav_as_s16le(args[0])
-        print(client.transcribe(pcm, sample_rate=rate))
+        model = args[1] if len(args) > 1 else None
+        print(client.transcribe(pcm, sample_rate=rate, model=model))
     elif command == "voices":
         print("\n".join(client.voices()) or "No saved voices.")
     elif command == "status":

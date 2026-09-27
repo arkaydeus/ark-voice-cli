@@ -20,19 +20,26 @@ public struct ModelSpec: Sendable {
   public let revision: String
   public let purpose: String
   public let artifacts: [ModelArtifact]
+  /// Glob patterns selecting which repository files to download.
+  public let downloadPatterns: [String]
+
+  /// Covers MLX checkpoints: weights, configuration, and tokenizer files.
+  public static let defaultDownloadPatterns = ["*.safetensors", "*.json", "*.txt", "*.model"]
 
   public init(
     title: String,
     repository: String,
     revision: String,
     purpose: String,
-    artifacts: [ModelArtifact]
+    artifacts: [ModelArtifact],
+    downloadPatterns: [String] = ModelSpec.defaultDownloadPatterns
   ) {
     self.title = title
     self.repository = repository
     self.revision = revision
     self.purpose = purpose
     self.artifacts = artifacts
+    self.downloadPatterns = downloadPatterns
   }
 }
 
@@ -44,7 +51,8 @@ private struct DownloadMarker: Codable, Equatable {
 public enum ModelStoreError: LocalizedError {
   case invalidRepository(String)
   case incompleteModel(String, [String])
-  case missingModels([String])
+  /// Titles of the missing models, and the `download` argument that fetches them.
+  case missingModels([String], download: ModelSelection)
 
   public var errorDescription: String? {
     switch self {
@@ -52,17 +60,35 @@ public enum ModelStoreError: LocalizedError {
       "Invalid Hugging Face repository ID: \(repository)"
     case .incompleteModel(let model, let problems):
       "Downloaded model '\(model)' failed validation: \(problems.joined(separator: ", "))"
-    case .missingModels(let models):
-      "Required model data is missing or incomplete: \(models.joined(separator: ", ")). Run 'ark-voice download' first."
+    case .missingModels(let models, let selection):
+      "Required model data is missing or incomplete: \(models.joined(separator: ", ")). Run 'ark-voice download \(selection.rawValue)' first."
     }
   }
 }
 
-/// Which side of the stack a download or status query covers.
+/// Which models a download or status query covers.
+///
+/// `all` and `stt` fetch only the default recognizer: the optional ones are
+/// large, so each is downloaded only when asked for by name.
 public enum ModelSelection: String, Equatable, Sendable, CaseIterable {
   case all
   case stt
   case tts
+  case parakeet
+  case parakeetUltra = "parakeet-ultra"
+  case qwen
+
+  public init(_ model: TranscriptionModel) {
+    switch model {
+    case .parakeet: self = .parakeet
+    case .parakeetUltra: self = .parakeetUltra
+    case .qwen: self = .qwen
+    }
+  }
+
+  public static var optionsDescription: String {
+    allCases.map(\.rawValue).joined(separator: "|")
+  }
 }
 
 public enum ModelStore {
@@ -80,6 +106,85 @@ public enum ModelStore {
         byteCount: 736_486_637,
         sha256: "996a833c31980677fcd6fd8e082435fb49152431d5be2062de636c17d8e31152"
       ),
+    ]
+  )
+
+  /// Core ML build of Moondream's Parakeet Ultra, run by FluidAudio.
+  ///
+  /// Only the files FluidAudio loads for `.ultra` are fetched; the repository
+  /// also carries a README and a duplicate vocabulary.
+  public static let parakeetUltra = ModelSpec(
+    title: "Parakeet Ultra (Core ML)",
+    repository: "FluidInference/parakeet-ultra-coreml",
+    revision: "95eaa59a39d4394f047a4dc5cce480388a60d1b6",
+    purpose: "Multilingual speech recognition on the Neural Engine",
+    artifacts: parakeetUltraArtifacts,
+    downloadPatterns: parakeetUltraArtifacts.map(\.path)
+  )
+
+  private static let parakeetUltraArtifacts = [
+    ModelArtifact(path: "Decoder.mlmodelc/analytics/coremldata.bin", byteCount: 243, sha256: nil),
+    ModelArtifact(path: "Decoder.mlmodelc/coremldata.bin", byteCount: 560, sha256: nil),
+    ModelArtifact(path: "Decoder.mlmodelc/model.mil", byteCount: 13_110, sha256: nil),
+    ModelArtifact(
+      path: "Decoder.mlmodelc/weights/weight.bin",
+      byteCount: 23_604_992,
+      sha256: "02a0d219f281b9665bc10c8768649403b2eebbbf4b44c627041d948e0de11bb4"
+    ),
+    ModelArtifact(path: "Encoder.mlmodelc/analytics/coremldata.bin", byteCount: 243, sha256: nil),
+    ModelArtifact(path: "Encoder.mlmodelc/coremldata.bin", byteCount: 514, sha256: nil),
+    ModelArtifact(path: "Encoder.mlmodelc/model.mil", byteCount: 1_002_653, sha256: nil),
+    ModelArtifact(
+      path: "Encoder.mlmodelc/weights/weight.bin",
+      byteCount: 594_211_328,
+      sha256: "315ba01f33cadbf601d43ac7f5c86208b7aa75fdaa34705c9869d5abe3521c9b"
+    ),
+    ModelArtifact(
+      path: "JointDecisionv3.mlmodelc/analytics/coremldata.bin", byteCount: 243, sha256: nil),
+    ModelArtifact(path: "JointDecisionv3.mlmodelc/coremldata.bin", byteCount: 592, sha256: nil),
+    ModelArtifact(path: "JointDecisionv3.mlmodelc/model.mil", byteCount: 11_777, sha256: nil),
+    ModelArtifact(
+      path: "JointDecisionv3.mlmodelc/weights/weight.bin",
+      byteCount: 12_642_764,
+      sha256: "3f310b85b82341c53ec383025ab094a4e462ee1c592e1ad7c6bfe39cff66ca25"
+    ),
+    ModelArtifact(
+      path: "Preprocessor.mlmodelc/analytics/coremldata.bin", byteCount: 243, sha256: nil),
+    ModelArtifact(path: "Preprocessor.mlmodelc/coremldata.bin", byteCount: 486, sha256: nil),
+    ModelArtifact(path: "Preprocessor.mlmodelc/metadata.json", byteCount: 2_841, sha256: nil),
+    ModelArtifact(path: "Preprocessor.mlmodelc/model.mil", byteCount: 28_181, sha256: nil),
+    ModelArtifact(
+      path: "Preprocessor.mlmodelc/weights/weight.bin",
+      byteCount: 491_072,
+      sha256: "129b76e3aeafa8afa3ea76d995b964b145fe83700d579f6ff42c4c38fa0968ea"
+    ),
+    ModelArtifact(path: "config.json", byteCount: 414, sha256: nil),
+    ModelArtifact(
+      path: "parakeet_vocab.json",
+      byteCount: 151_122,
+      sha256: "7ec60e05f1b24480736ec0eed40900f4626bce1fa9a60fd700ec7e2a59198735"
+    ),
+  ]
+
+  public static let qwen3ASR = ModelSpec(
+    title: "Qwen3-ASR 1.7B 8-bit",
+    repository: "mlx-community/Qwen3-ASR-1.7B-8bit",
+    revision: "a8379a2e2f9e313c9292cdf1af4055ab56d50d55",
+    purpose: "Multilingual speech recognition",
+    artifacts: [
+      ModelArtifact(path: "chat_template.json", byteCount: 1_161, sha256: nil),
+      ModelArtifact(path: "config.json", byteCount: 7_188, sha256: nil),
+      ModelArtifact(path: "generation_config.json", byteCount: 142, sha256: nil),
+      ModelArtifact(path: "merges.txt", byteCount: 1_671_853, sha256: nil),
+      ModelArtifact(
+        path: "model.safetensors",
+        byteCount: 2_463_307_541,
+        sha256: "bf304b009cc7eca79283056f787b44c952d24ac22cec787b39732bba3c23c13c"
+      ),
+      ModelArtifact(path: "model.safetensors.index.json", byteCount: 78_968, sha256: nil),
+      ModelArtifact(path: "preprocessor_config.json", byteCount: 330, sha256: nil),
+      ModelArtifact(path: "tokenizer_config.json", byteCount: 12_487, sha256: nil),
+      ModelArtifact(path: "vocab.json", byteCount: 2_776_833, sha256: nil),
     ]
   )
 
@@ -124,7 +229,8 @@ public enum ModelStore {
     ]
   )
 
-  public static let all = [parakeet, chatterbox, s3Tokenizer]
+  /// Every model `ark-voice` knows about, downloaded or not.
+  public static let all = [parakeet, parakeetUltra, qwen3ASR, chatterbox, s3Tokenizer]
 
   /// Where models and voices live unless a host chooses otherwise.
   public static let defaultRoot: URL = FileManager.default.homeDirectoryForCurrentUser
@@ -146,9 +252,19 @@ public enum ModelStore {
 
   public static func selected(_ selection: ModelSelection) -> [ModelSpec] {
     switch selection {
-    case .all: all
-    case .stt: [parakeet]
+    case .all: [parakeet, chatterbox, s3Tokenizer]
+    case .stt, .parakeet: [parakeet]
     case .tts: [chatterbox, s3Tokenizer]
+    case .parakeetUltra: [parakeetUltra]
+    case .qwen: [qwen3ASR]
+    }
+  }
+
+  public static func spec(for model: TranscriptionModel) -> ModelSpec {
+    switch model {
+    case .parakeet: parakeet
+    case .parakeetUltra: parakeetUltra
+    case .qwen: qwen3ASR
     }
   }
 
@@ -229,8 +345,20 @@ public enum ModelStore {
   }
 
   public static func requireDownloaded(_ models: [ModelSpec], root: URL = defaultRoot) throws {
-    let missing = models.filter { !isDownloaded($0, root: root) }.map(\.title)
-    guard missing.isEmpty else { throw ModelStoreError.missingModels(missing) }
+    let missing = models.filter { !isDownloaded($0, root: root) }
+    guard missing.isEmpty else {
+      throw ModelStoreError.missingModels(
+        missing.map(\.title), download: narrowestSelection(covering: missing))
+    }
+  }
+
+  /// The smallest `download` argument that fetches every one of `models`.
+  static func narrowestSelection(covering models: [ModelSpec]) -> ModelSelection {
+    let wanted = Set(models.map(\.repository))
+    let candidates: [ModelSelection] = [.parakeet, .parakeetUltra, .qwen, .tts, .all]
+    return candidates.first { selection in
+      wanted.isSubset(of: selected(selection).map(\.repository))
+    } ?? .all
   }
 
   public static func download(
@@ -242,12 +370,29 @@ public enum ModelStore {
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
 
     for model in models {
-      if isDownloaded(model, root: root) {
-        progress?(.modelDownloadFinished(model: model.title, directory: modelDirectory(for: model, root: root)))
-        continue
+      if !isDownloaded(model, root: root) {
+        try await download(model, root: root, progress: progress)
       }
-      try await download(model, root: root, progress: progress)
+      try prepareForFirstUse(model, root: root, progress: progress)
+      progress?(.modelDownloadFinished(model: model.title, directory: modelDirectory(for: model, root: root)))
     }
+  }
+
+  /// Compiles Core ML models for this Mac now, so the first transcription
+  /// does not spend several seconds doing it.
+  ///
+  /// Core ML caches the compiled form per executable, per macOS build, and per
+  /// model path. So this runs at the model's final location, benefits later
+  /// runs of the same executable, and costs almost nothing once cached. After
+  /// a macOS update, downloading again re-warms the cache.
+  private static func prepareForFirstUse(
+    _ model: ModelSpec,
+    root: URL,
+    progress: (@Sendable (ProgressEvent) -> Void)?
+  ) throws {
+    guard model.repository == parakeetUltra.repository else { return }
+    progress?(.message("Preparing \(model.title) for the Neural Engine..."))
+    _ = try ParakeetUltraRecognizer(directory: modelDirectory(for: model, root: root))
   }
 
   private static func download(
@@ -272,7 +417,7 @@ public enum ModelStore {
       kind: .model,
       to: staging,
       revision: model.revision,
-      matching: ["*.safetensors", "*.json", "*.txt", "*.model"],
+      matching: model.downloadPatterns,
       progressHandler: { completed in
         progress?(
           .modelDownloadProgress(
@@ -299,7 +444,6 @@ public enum ModelStore {
 
     try writeCompletionMarker(for: model, in: staging)
     try activate(staging: staging, for: model, root: root)
-    progress?(.modelDownloadFinished(model: model.title, directory: modelDirectory(for: model, root: root)))
   }
 
   public static func writeCompletionMarker(for model: ModelSpec, in directory: URL) throws {

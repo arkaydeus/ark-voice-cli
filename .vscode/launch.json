@@ -1,1 +1,24 @@
-{}
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:ark-voice-cli-20260927-130000-57701d8c9e2d}",
+            "name": "Debug ark-voice",
+            "target": "ark-voice",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug ark-voice"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:ark-voice-cli-20260927-130000-57701d8c9e2d}",
+            "name": "Release ark-voice",
+            "target": "ark-voice",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release ark-voice"
+        }
+    ]
+}

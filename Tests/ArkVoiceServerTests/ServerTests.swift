@@ -23,6 +23,7 @@ import ArkVoiceKit
         #expect(status.version == arkVoiceProtocolVersion)
         #expect(status.synthesisModelLoaded == false)
         #expect(status.transcriptionModelLoaded == false)
+        #expect(status.transcriptionModel == nil)
 
         #expect(try client.voices().isEmpty)
         try client.unload()
@@ -173,6 +174,41 @@ import ArkVoiceKit
         let reply = try readMessage(on: connection, requestID: 8)
         #expect(reply.event == .error)
         #expect(reply.code == .modelsMissing || reply.code == .failed)
+      }
+    }
+  }
+
+  @Test func transcriptionRequestsMayNameARecognizer() async throws {
+    try await withServer { socketPath in
+      try await onThread {
+        let connection = try connectToSocket(path: socketPath)
+        defer { connection.close() }
+        try handshake(on: connection)
+
+        var unknown = ClientMessage(op: .stt)
+        unknown.model = "whisper"
+        try send(unknown, requestID: 5, on: connection)
+        let refusal = try readMessage(on: connection, requestID: 5)
+        #expect(refusal.event == .error)
+        #expect(refusal.code == .badRequest)
+        #expect(refusal.message?.contains("parakeet-ultra") == true)
+
+        // A known recognizer is accepted, then fails only for want of weights,
+        // naming the download that would fetch them.
+        var ultra = ClientMessage(op: .stt)
+        ultra.model = TranscriptionModel.parakeetUltra.rawValue
+        try send(ultra, requestID: 6, on: connection)
+        connection.sendSynchronously(
+          Frame(
+            kind: .pcm,
+            requestID: 6,
+            payload: AudioDecoding.data(from: [Float](repeating: 0.1, count: 1_600), format: .s16le)
+          )
+        )
+        try send(ClientMessage(op: .end), requestID: 6, on: connection)
+        let missing = try readMessage(on: connection, requestID: 6)
+        #expect(missing.code == .modelsMissing)
+        #expect(missing.message?.contains("download parakeet-ultra") == true)
       }
     }
   }

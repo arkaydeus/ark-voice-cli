@@ -1,7 +1,6 @@
 import Foundation
 import MLX
 import MLXAudioCore
-import MLXAudioSTT
 import MLXAudioTTS
 
 /// Local speech synthesis and recognition with resident models.
@@ -14,7 +13,11 @@ import MLXAudioTTS
 /// Instances are safe to share across tasks. Model work is serialized — one
 /// generation runs at a time — because the models cannot run concurrently.
 ///
-/// The class is `@unchecked Sendable` because it stores MLX models that are not
+/// Speech recognition uses one resident recognizer at a time. Each call may
+/// name a ``TranscriptionModel``; one that differs from the resident recognizer
+/// releases it before loading the new one.
+///
+/// The class is `@unchecked Sendable` because it stores models that are not
 /// `Sendable`. Every access to them happens inside the gate, and the stored
 /// references themselves are guarded by `stateLock`.
 public final class VoiceSession: @unchecked Sendable {
@@ -29,7 +32,7 @@ public final class VoiceSession: @unchecked Sendable {
   private let stateLock = NSLock()
   private var chatterbox: ChatterboxModel?
   private var builtInConditioning: DefaultConditioning?
-  private var parakeet: ParakeetModel?
+  private var recognizer: (any Recognizer)?
   private var conditioningCache: [String: DefaultConditioning] = [:]
 
   public init(configuration: SessionConfiguration = SessionConfiguration()) {
@@ -46,7 +49,12 @@ public final class VoiceSession: @unchecked Sendable {
   }
 
   public var isTranscriptionModelLoaded: Bool {
-    stateLock.withLock { parakeet != nil }
+    stateLock.withLock { recognizer != nil }
+  }
+
+  /// The resident recognizer, if one is loaded.
+  public var loadedTranscriptionModel: TranscriptionModel? {
+    stateLock.withLock { recognizer?.model }
   }
 
   // MARK: - Synthesis
@@ -169,12 +177,18 @@ public final class VoiceSession: @unchecked Sendable {
   /// Transcribes mono samples supplied at ``transcriptionSampleRate``.
   ///
   /// Partial events arrive as the recognizer works through the audio; the
-  /// `final` event carries the complete transcript.
-  public func transcribe(samples: [Float]) -> AsyncThrowingStream<TranscriptEvent, Error> {
+  /// `final` event carries the complete transcript. Parakeet Ultra produces its
+  /// text only once the whole input is done, so it sends a single partial.
+  ///
+  /// `model` defaults to the configuration's ``SessionConfiguration/transcriptionModel``.
+  public func transcribe(
+    samples: [Float],
+    model: TranscriptionModel? = nil
+  ) -> AsyncThrowingStream<TranscriptEvent, Error> {
     AsyncThrowingStream { continuation in
       let task = Task {
         do {
-          try await self.runTranscription(samples: samples) { event in
+          try await self.runTranscription(samples: samples, model: model) { event in
             continuation.yield(event)
           }
           continuation.finish()
@@ -187,7 +201,10 @@ public final class VoiceSession: @unchecked Sendable {
   }
 
   /// Decodes an audio file and transcribes it.
-  public func transcribeFile(at url: URL) -> AsyncThrowingStream<TranscriptEvent, Error> {
+  public func transcribeFile(
+    at url: URL,
+    model: TranscriptionModel? = nil
+  ) -> AsyncThrowingStream<TranscriptEvent, Error> {
     AsyncThrowingStream { continuation in
       let task = Task {
         do {
@@ -195,7 +212,7 @@ public final class VoiceSession: @unchecked Sendable {
             at: url,
             sampleRate: Self.transcriptionSampleRate
           )
-          try await self.runTranscription(samples: samples) { event in
+          try await self.runTranscription(samples: samples, model: model) { event in
             continuation.yield(event)
           }
           continuation.finish()
@@ -208,9 +225,12 @@ public final class VoiceSession: @unchecked Sendable {
   }
 
   /// Transcribes and returns only the finished text.
-  public func transcribeAll(samples: [Float]) async throws -> String {
+  public func transcribeAll(
+    samples: [Float],
+    model: TranscriptionModel? = nil
+  ) async throws -> String {
     var transcript = ""
-    for try await event in transcribe(samples: samples) {
+    for try await event in transcribe(samples: samples, model: model) {
       if case .final(let text) = event { transcript = text }
     }
     return transcript
@@ -218,35 +238,20 @@ public final class VoiceSession: @unchecked Sendable {
 
   private func runTranscription(
     samples: [Float],
+    model requested: TranscriptionModel?,
     yield: @Sendable (TranscriptEvent) -> Void
   ) async throws {
     guard !samples.isEmpty else {
       yield(.final(""))
       return
     }
-    try requireRuntime()
+    let model = requested ?? configuration.transcriptionModel
+    if model.usesMLX { try requireRuntime() }
 
     try await withGate(gate) {
-      let model = try loadTranscriptionModel()
-      let parameters = STTGenerateParameters(language: "English", chunkDuration: 5.0)
-      let audio = MLXArray(samples)
-
-      var transcript = ""
-      for try await event in model.generateStream(
-        audio: audio,
-        generationParameters: parameters
-      ) {
-        try Task.checkCancellation()
-        switch event {
-        case .token(let delta):
-          // Deltas keep their own spacing so that concatenating them
-          // reproduces the transcript; trimming here would run words together.
-          if !delta.isEmpty { yield(.partial(delta)) }
-        case .result(let output):
-          transcript = output.text
-        case .info:
-          break
-        }
+      let recognizer = try await loadRecognizer(model)
+      let transcript = try await recognizer.transcribe(samples) { delta in
+        yield(.partial(delta))
       }
       yield(.final(transcript.trimmingCharacters(in: .whitespacesAndNewlines)))
     }
@@ -286,10 +291,11 @@ public final class VoiceSession: @unchecked Sendable {
     try await withGate(gate) { _ = try await loadSynthesisModel() }
   }
 
-  /// Loads the transcription model without transcribing anything.
-  public func preloadTranscriptionModel() async throws {
-    try requireRuntime()
-    try await withGate(gate) { _ = try loadTranscriptionModel() }
+  /// Loads a recognizer without transcribing anything.
+  public func preloadTranscriptionModel(_ requested: TranscriptionModel? = nil) async throws {
+    let model = requested ?? configuration.transcriptionModel
+    if model.usesMLX { try requireRuntime() }
+    try await withGate(gate) { _ = try await loadRecognizer(model) }
   }
 
   /// Releases resident models and cached conditioning.
@@ -305,17 +311,17 @@ public final class VoiceSession: @unchecked Sendable {
   ) async -> Bool {
     await withGate(gate) {
       guard condition() else { return false }
-      let hadResidentModel = stateLock.withLock { () -> Bool in
-        let wasLoaded = chatterbox != nil || parakeet != nil
+      let hadMLXModel = stateLock.withLock { () -> Bool in
+        let wasLoaded = chatterbox != nil || recognizer?.model.usesMLX == true
         chatterbox = nil
         builtInConditioning = nil
-        parakeet = nil
+        recognizer = nil
         conditioningCache.removeAll()
         return wasLoaded
       }
       // Touching MLX's allocator initializes the Metal runtime, so leave it
-      // alone when nothing was ever loaded — an idle server needs no GPU.
-      if hadResidentModel { MLX.Memory.clearCache() }
+      // alone when no MLX model was loaded — an idle server needs no GPU.
+      if hadMLXModel { MLX.Memory.clearCache() }
       configuration.progress?(.modelsUnloaded)
       return true
     }
@@ -350,19 +356,37 @@ public final class VoiceSession: @unchecked Sendable {
     return model
   }
 
-  private func loadTranscriptionModel() throws -> ParakeetModel {
-    if let cached = stateLock.withLock({ parakeet }) { return cached }
+  /// Returns the resident recognizer for `model`, loading it if needed.
+  ///
+  /// A different resident recognizer is released first, but only once the
+  /// requested one is known to be downloaded, so a bad request does not cost
+  /// the server the model it already has.
+  private func loadRecognizer(_ model: TranscriptionModel) async throws -> any Recognizer {
+    if let cached = stateLock.withLock({ recognizer }), cached.model == model { return cached }
 
-    try ModelStore.requireDownloaded([ModelStore.parakeet], root: configuration.modelRoot)
-    configuration.progress?(.modelLoadStarted(model: ModelStore.parakeet.title))
+    let spec = ModelStore.spec(for: model)
+    try ModelStore.requireDownloaded([spec], root: configuration.modelRoot)
 
-    let model = try ParakeetModel.fromDirectory(
-      ModelStore.modelDirectory(for: ModelStore.parakeet, root: configuration.modelRoot)
-    )
+    // Drop the last reference before clearing MLX's cache: weights freed
+    // afterwards would land in the cache and stay allocated.
+    let releasedMLXModel = stateLock.withLock { () -> Bool in
+      defer { recognizer = nil }
+      return recognizer?.model.usesMLX == true
+    }
+    if releasedMLXModel { MLX.Memory.clearCache() }
 
-    stateLock.withLock { parakeet = model }
-    configuration.progress?(.modelLoadFinished(model: ModelStore.parakeet.title))
-    return model
+    configuration.progress?(.modelLoadStarted(model: spec.title))
+    let directory = ModelStore.modelDirectory(for: spec, root: configuration.modelRoot)
+    let loaded: any Recognizer =
+      switch model {
+      case .parakeet: try ParakeetRecognizer(directory: directory)
+      case .parakeetUltra: try ParakeetUltraRecognizer(directory: directory)
+      case .qwen: try await QwenRecognizer.load(directory: directory)
+      }
+
+    stateLock.withLock { recognizer = loaded }
+    configuration.progress?(.modelLoadFinished(model: spec.title))
+    return loaded
   }
 
   /// Points the model at the requested voice.

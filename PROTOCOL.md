@@ -78,7 +78,7 @@ of text is generated, so playback need not wait for the whole utterance.
 ### Transcription
 
 ```json
-→ {"op": "stt", "format": "s16le", "sampleRate": 16000}
+→ {"op": "stt", "format": "s16le", "sampleRate": 16000, "model": "parakeet-ultra"}
 → <pcm frame>                       as many as needed
 → {"op": "end"}
 ← {"event": "partial", "text": " the quick"}
@@ -86,8 +86,17 @@ of text is generated, so playback need not wait for the whole utterance.
 ← {"event": "done"}
 ```
 
+`model` is optional: `parakeet`, `parakeet-ultra`, or `qwen`. Without it the
+server uses its default, Parakeet v2 unless `ark-voice serve --stt-model` says
+otherwise. An unknown name is refused with `bad-request` straight away; a known
+one that is not downloaded ends in `models-missing` once the audio is in. The
+server keeps one recognizer resident and swaps it when a request asks for
+another.
+
 `partial` carries the text recognized since the previous event, with its own
-spacing, so concatenating the partials reproduces the transcript. A connection
+spacing, so concatenating the partials reproduces the transcript. Parakeet
+Ultra produces its text only once the whole input is done, so it sends one
+`partial` holding all of it. A connection
 may have at most eight open audio streams. Across all connections, their
 combined buffered audio is capped at about thirty minutes. The same limit also
 applies to any one request.
@@ -110,7 +119,7 @@ first, or uses `ark-voice stt <file>` for a one-shot transcription.
 | Request                | Response                                                            |
 | ---------------------- | ------------------------------------------------------------------- |
 | `{"op": "voices"}`     | `{"event": "voices", "names": [...]}`                               |
-| `{"op": "status"}`     | `{"event": "status", "synthesisModelLoaded": true, ...}`            |
+| `{"op": "status"}`     | `{"event": "status", "synthesisModelLoaded": true, "transcriptionModel": "qwen", ...}` |
 | `{"op": "unload"}`     | `{"event": "done"}` — releases resident models                      |
 | `{"op": "cancel"}`     | the addressed request ends with `{"event": "error", "code": "cancelled"}` |
 

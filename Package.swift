@@ -14,6 +14,13 @@ let package = Package(
   ],
   dependencies: [
     .package(path: "Vendor/mlx-audio-swift"),
+    // Parakeet Ultra runs on Core ML through FluidAudio. The NeMo text
+    // normalisation binary is opted out: transcripts keep the recogniser's text.
+    .package(
+      url: "https://github.com/FluidInference/FluidAudio.git",
+      exact: "0.17.3",
+      traits: []
+    ),
     .package(
       url: "https://github.com/huggingface/swift-huggingface.git",
       exact: "0.8.1"
@@ -37,6 +44,7 @@ let package = Package(
         .product(name: "MLXAudioTTS", package: "mlx-audio-swift"),
         .product(name: "HuggingFace", package: "swift-huggingface"),
         .product(name: "MLX", package: "mlx-swift"),
+        .product(name: "FluidAudio", package: "FluidAudio"),
       ]
     ),
     .target(

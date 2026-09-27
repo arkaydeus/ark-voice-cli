@@ -1,18 +1,20 @@
 # ark-voice
 
-`ark-voice` is local English speech recognition and synthesis on Apple Silicon, usable three ways:
+`ark-voice` is local speech recognition and English speech synthesis on Apple Silicon, usable three ways:
 
 - as a **command-line tool**, including streaming audio to and from pipes
 - as a **Swift library** (`ArkVoiceKit`) linked directly into another app
 - as a **server** (`ark-voice serve`) that keeps models resident and answers requests over a Unix socket
 
-It uses MLX Audio Swift with:
+It uses MLX Audio Swift and FluidAudio with:
 
-- `sonic-speech/parakeet-tdt-0.6b-v2-int8` for English STT
+- `sonic-speech/parakeet-tdt-0.6b-v2-int8` for English STT on MLX (the default recognizer)
+- `FluidInference/parakeet-ultra-coreml` for multilingual STT on Core ML (optional)
+- `mlx-community/Qwen3-ASR-1.7B-8bit` for multilingual STT on MLX (optional)
 - `mlx-community/chatterbox-turbo-6bit` for English TTS
 - `mlx-community/S3TokenizerV2`, required by Chatterbox and voice cloning
 
-Models are not included in the executable. They are downloaded only when you run `ark-voice download`, and are stored under `~/.ark-voice-cli`.
+Models are not included in the executable. They are downloaded only when you run `ark-voice download`, and are stored under `~/.ark-voice-cli`. The optional recognizers are downloaded only when named.
 
 Downloads are pinned to reviewed Hugging Face commit revisions. Required files and sizes are validated, model-weight SHA-256 checksums are verified, and a completed snapshot is activated atomically so an interrupted download cannot be mistaken for a usable model.
 
@@ -48,7 +50,7 @@ sudo ln -sfn /usr/local/libexec/ark-voice/ark-voice /usr/local/bin/ark-voice
 
 ## Use
 
-Download both models and the Chatterbox tokenizer:
+Download the default recognizer, the TTS model, and the Chatterbox tokenizer:
 
 ```sh
 ark-voice download
@@ -154,6 +156,34 @@ ark-voice models
 
 You can download only one side of the stack with `ark-voice download stt` or `ark-voice download tts`. The latter also downloads Chatterbox's speech tokenizer.
 
+### Choosing a recognizer
+
+`stt` uses Parakeet v2 unless `--model` names another. The optional recognizers are downloaded by
+name:
+
+```sh
+ark-voice download parakeet-ultra
+ark-voice stt interview.m4a --model parakeet-ultra
+
+ark-voice download qwen
+ark-voice stt podcast.m4a -m qwen --stream
+```
+
+| `--model` | Runtime | Languages | Download | Peak memory, 8 min of audio | Streams partial text |
+| --- | --- | --- | --- | --- | --- |
+| `parakeet` (default) | MLX, GPU | English | 0.7 GB | ~1.2 GB | yes |
+| `parakeet-ultra` | Core ML, Neural Engine | 25 European | 0.6 GB | ~0.1 GB | no — the transcript arrives at the end |
+| `qwen` | MLX, GPU | 30, plus 22 Chinese dialects | 2.5 GB | ~4.5 GB | yes |
+
+Measured on an M5 Max against LibriSpeech read English (32 minutes of audio): Parakeet Ultra ran at
+about 175× real time and Qwen3-ASR at about 50×, with word error rates of 4.2% and 3.8%. Parakeet
+Ultra must be compiled for the Neural Engine before its first use, which takes about ten seconds;
+`ark-voice download parakeet-ultra` does that straight after downloading, so the first
+transcription starts at once. Core ML keeps the compiled form per macOS version: after a macOS
+update, run the download command again (it skips the files it already has) or let the first
+transcription pay the cost. A host app that links `ArkVoiceKit` has its own Core ML cache and should
+call `preloadTranscriptionModel(.parakeetUltra)` once after installing the model. Parakeet Ultra and Qwen detect the spoken language themselves.
+
 
 ## Use from another app
 
@@ -183,8 +213,9 @@ for try await chunk in session.synthesize("Hello", voice: .named("narrator")) {
   player.enqueue(chunk.samples)         // mono Float32 at chunk.sampleRate (24 kHz)
 }
 
-// Transcription reports text as it is recognized.
-for try await event in session.transcribe(samples: recordedAt16kHz) {
+// Transcription reports text as it is recognized. `model` is optional and defaults to
+// SessionConfiguration.transcriptionModel (Parakeet v2).
+for try await event in session.transcribe(samples: recordedAt16kHz, model: .parakeetUltra) {
   if case .final(let text) = event { print(text) }
 }
 
@@ -195,8 +226,10 @@ A session is safe to share across tasks. Model work is serialized internally bec
 cannot run concurrently. The first call to each side loads that model; every later call pays only
 for inference. `AudioDecoding` converts files and raw PCM into the `[Float]` buffers the API takes.
 
+One recognizer is resident at a time: asking for a different one releases the current one first.
+
 A host that embeds the kit must ship MLX's `mlx.metallib` and point `SessionConfiguration.metallibURL`
-at it, or place it beside the executable.
+at it, or place it beside the executable. Parakeet Ultra runs on Core ML and does not need it.
 
 ### Talk to the server
 
@@ -206,6 +239,7 @@ address space, run a daemon:
 ```sh
 ark-voice serve                          # ~/.ark-voice-cli/ark-voice.sock, mode 0600
 ark-voice serve --socket /tmp/av.sock --idle-unload 120 --idle-exit off
+ark-voice serve --stt-model parakeet-ultra   # recognizer for requests that do not name one
 ```
 
 and drive it from anywhere:
@@ -214,6 +248,7 @@ and drive it from anywhere:
 ark-voice client tts "No reload for this one" -o quick.wav
 ark-voice client tts "Straight to the speakers" -o - | ffplay -autoexit -nodisp -
 ark-voice client stt recording.wav --stream
+ark-voice client stt recording.wav --model qwen
 ark-voice client status
 ark-voice client unload
 ```
@@ -225,6 +260,7 @@ complete client with nothing but the Python standard library:
 ```sh
 ./Scripts/client.py speak "Hello from Python" out.wav
 ./Scripts/client.py transcribe recording.wav
+./Scripts/client.py transcribe recording.wav parakeet-ultra
 ```
 
 What this buys, measured on an M-series Mac with the weights already in the page cache:
@@ -247,7 +283,10 @@ for a `stt-live` operation to be added without breaking clients.
 
 ## Notes
 
-- The tool is intentionally English-only and has no language-selection option.
+- Speech synthesis is English-only. Recognition is English with the default model; Parakeet Ultra
+  and Qwen3-ASR detect the language themselves. There is no language-selection option.
+- Qwen3-ASR decodes one token at a time, so a partial can split a multi-byte character in
+  non-Latin scripts. The final transcript is always decoded whole.
 - Input decoding uses AVFoundation. MP4 files must contain an audio track.
 - TTS output can be Float32 WAV, AAC-LC in M4A, or ADTS AAC. All are mono at Chatterbox's native
   24 kHz sample rate; WAV is the default.
