@@ -281,7 +281,9 @@ private final class ConnectionHandler: @unchecked Sendable {
 
   private let connection: SocketConnection
   private let session: VoiceSession
-  private unowned let server: VoiceServer
+  // The reader can outlive `run()` while the socket is closing. Keep the
+  // server alive until `close()` removes this handler from its connection set.
+  private let server: VoiceServer
   private let audioBufferLimits: AudioBufferLimits
 
   private let stateLock = NSLock()
