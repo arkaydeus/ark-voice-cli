@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 import Testing
 
@@ -122,6 +123,10 @@ import ArkVoiceKit
     #expect(ultra.downloadPatterns == ultra.artifacts.map(\.path))
     #expect(ultra.artifacts.contains { $0.path == "Encoder.mlmodelc/weights/weight.bin" })
     #expect(ModelStore.qwen3ASR.downloadPatterns == ModelSpec.defaultDownloadPatterns)
+    for artifact in ultra.artifacts {
+      #expect(ultra.downloadPatterns.contains { fnmatch($0, artifact.path, 0) == 0 })
+    }
+    #expect(!ultra.downloadPatterns.contains { fnmatch($0, "unrelated/weight.bin", 0) == 0 })
   }
 
   @Test func nestedArtifactsAreValidated() throws {
@@ -161,11 +166,48 @@ import ArkVoiceKit
     #expect(
       message([ModelStore.chatterbox, ModelStore.s3Tokenizer])?.contains("'ark-voice download tts'")
         == true)
+    let mixedUltra = message([ModelStore.parakeet, ModelStore.parakeetUltra])
+    #expect(mixedUltra?.contains("'ark-voice download parakeet'") == true)
+    #expect(mixedUltra?.contains("'ark-voice download parakeet-ultra'") == true)
+    let mixedQwen = message([ModelStore.parakeet, ModelStore.qwen3ASR])
+    #expect(mixedQwen?.contains("'ark-voice download parakeet'") == true)
+    #expect(mixedQwen?.contains("'ark-voice download qwen'") == true)
+  }
+
+  @Test func alreadyDownloadedModelReportsOneCompletion() async throws {
+    let fixture = try ModelFixture()
+    defer { fixture.remove() }
+    try fixture.writeValidFiles()
+    try ModelStore.writeCompletionMarker(for: fixture.model, in: fixture.directory)
+    let events = DownloadEvents()
+    try await ModelStore.download([fixture.model], root: fixture.root) { event in
+      events.record(event)
+    }
+    #expect(events.finished == 1)
+    #expect(events.started == 0)
   }
 
   private func sha256(_ data: Data) -> String {
     SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
   }
+}
+
+private final class DownloadEvents: @unchecked Sendable {
+  private let lock = NSLock()
+  private var counts = (started: 0, finished: 0)
+
+  func record(_ event: ProgressEvent) {
+    lock.withLock {
+      switch event {
+      case .modelDownloadStarted: counts.started += 1
+      case .modelDownloadFinished: counts.finished += 1
+      default: break
+      }
+    }
+  }
+
+  var started: Int { lock.withLock { counts.started } }
+  var finished: Int { lock.withLock { counts.finished } }
 }
 
 private struct ModelFixture {

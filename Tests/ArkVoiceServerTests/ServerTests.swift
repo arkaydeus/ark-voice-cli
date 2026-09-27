@@ -31,6 +31,17 @@ import ArkVoiceKit
     }
   }
 
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["ARK_VOICE_TEST_MODELS"] == "1"))
+  func statusNamesResidentRecognizer() async throws {
+    let session = VoiceSession()
+    try await session.preloadTranscriptionModel(.parakeetUltra)
+    let server = VoiceServer(session: session, configuration: VoiceServer.Configuration(
+      socketPath: Self.temporarySocketPath()))
+    let status = server.statusMessage()
+    #expect(status.transcriptionModelLoaded == true)
+    #expect(status.transcriptionModel == "parakeet-ultra")
+  }
+
   @Test func requestsWithoutModelsFailWithoutKillingTheConnection() async throws {
     try await withServer { socketPath in
       try await onThread {
@@ -207,6 +218,28 @@ import ArkVoiceKit
         )
         try send(ClientMessage(op: .end), requestID: 6, on: connection)
         let missing = try readMessage(on: connection, requestID: 6)
+        #expect(missing.code == .modelsMissing)
+        #expect(missing.message?.contains("download parakeet-ultra") == true)
+      }
+    }
+  }
+
+  @Test func configuredDefaultRecognizerAppliesWhenRequestOmitsModel() async throws {
+    try await withServer(transcriptionModel: .parakeetUltra) { socketPath in
+      try await onThread {
+        let connection = try connectToSocket(path: socketPath)
+        defer { connection.close() }
+        try handshake(on: connection)
+        var request = ClientMessage(op: .stt)
+        request.format = .s16le
+        request.sampleRate = 16_000
+        try send(request, requestID: 91, on: connection)
+        connection.sendSynchronously(Frame(
+          kind: .pcm, requestID: 91,
+          payload: AudioDecoding.data(from: [Float](repeating: 0.1, count: 1_600), format: .s16le)
+        ))
+        try send(ClientMessage(op: .end), requestID: 91, on: connection)
+        let missing = try readMessage(on: connection, requestID: 91)
         #expect(missing.code == .modelsMissing)
         #expect(missing.message?.contains("download parakeet-ultra") == true)
       }
@@ -646,6 +679,7 @@ import ArkVoiceKit
   private func withServer(
     idleExitSeconds: Double? = nil,
     audioBufferLimits: AudioBufferLimits = AudioBufferLimits(),
+    transcriptionModel: TranscriptionModel = .parakeet,
     _ body: @escaping @Sendable (String) async throws -> Void
   ) async throws {
     let modelRoot = FileManager.default.temporaryDirectory
@@ -656,7 +690,8 @@ import ArkVoiceKit
       Self.removeSocketArtifacts(socketPath)
     }
 
-    let session = VoiceSession(configuration: SessionConfiguration(modelRoot: modelRoot))
+    let session = VoiceSession(configuration: SessionConfiguration(
+      modelRoot: modelRoot, transcriptionModel: transcriptionModel))
     var configuration = VoiceServer.Configuration(
       socketPath: socketPath,
       idleUnloadSeconds: nil,

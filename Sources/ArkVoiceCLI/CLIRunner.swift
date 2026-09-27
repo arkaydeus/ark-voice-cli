@@ -183,22 +183,24 @@ enum CLIRunner {
       let client = try connect(socketPath)
       defer { client.close() }
       let status = try client.status()
-      writeStandardOutput(
-        """
-        protocol: \(status.version ?? 0)
-        synthesis model loaded: \(status.synthesisModelLoaded ?? false)
-        transcription model loaded: \(status.transcriptionModel ?? (status.transcriptionModelLoaded == true ? "yes" : "none"))
-        requests served: \(status.requestsServed ?? 0)
-        uptime: \(Int(status.uptimeSeconds ?? 0))s
-
-        """
-      )
+      writeStandardOutput(renderStatus(status))
     case .unload(let socketPath):
       let client = try connect(socketPath)
       defer { client.close() }
       try client.unload()
       writeStandardError("Server released its models.\n")
     }
+  }
+
+  static func renderStatus(_ status: ServerMessage) -> String {
+    """
+    protocol: \(status.version ?? 0)
+    synthesis model loaded: \(status.synthesisModelLoaded ?? false)
+    transcription model loaded: \(status.transcriptionModel ?? (status.transcriptionModelLoaded == true ? "yes" : "none"))
+    requests served: \(status.requestsServed ?? 0)
+    uptime: \(Int(status.uptimeSeconds ?? 0))s
+
+    """
   }
 
   private static func connect(_ socketPath: String?) throws -> VoiceClient {

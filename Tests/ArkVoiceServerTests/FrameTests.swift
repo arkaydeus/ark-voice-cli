@@ -64,20 +64,24 @@ import ArkVoiceKit
     request.text = "hello"
     request.voice = "narrator"
     request.format = .s16le
+    request.model = "qwen"
 
     let decoded = try ProtocolCoder.decodeClient(try ProtocolCoder.encode(request))
     #expect(decoded.op == .tts)
     #expect(decoded.text == "hello")
     #expect(decoded.voice == "narrator")
     #expect(decoded.format == .s16le)
+    #expect(decoded.model == "qwen")
 
     var reply = ServerMessage(event: .done)
     reply.chunks = 3
     reply.samples = 48_000
+    reply.transcriptionModel = "parakeet-ultra"
     let decodedReply = try ProtocolCoder.decodeServer(ProtocolCoder.encode(reply))
     #expect(decodedReply.event == .done)
     #expect(decodedReply.chunks == 3)
     #expect(decodedReply.samples == 48_000)
+    #expect(decodedReply.transcriptionModel == "parakeet-ultra")
   }
 
   @Test func operationNamesAreStableOnTheWire() throws {

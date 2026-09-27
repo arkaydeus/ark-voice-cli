@@ -61,6 +61,7 @@ let package = Package(
         "ArkVoiceKit",
         .product(name: "MLX", package: "mlx-swift"),
         .product(name: "MLXAudioTTS", package: "mlx-audio-swift"),
+        .product(name: "MLXAudioSTT", package: "mlx-audio-swift"),
         .product(name: "Testing", package: "swift-testing"),
       ]
     ),
@@ -76,6 +77,7 @@ let package = Package(
       name: "ArkVoiceCLITests",
       dependencies: [
         "ArkVoiceCLI",
+        "ArkVoiceServer",
         .product(name: "Testing", package: "swift-testing"),
       ]
     ),

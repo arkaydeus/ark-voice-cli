@@ -1474,10 +1474,10 @@ public class Qwen3ASRModel: Module {
                     var totalPromptTokens = 0
                     var totalGenerationTokens = 0
                     var remainingTokens = maxTokens
-                    var allGeneratedTokens: [Int] = []
+                    var transcript = ""
                     var resolvedLanguage = language
 
-                    for (chunkAudio, _) in chunks {
+                    for (chunkIndex, (chunkAudio, _)) in chunks.enumerated() {
                         if remainingTokens <= 0 { break }
                         try Task.checkCancellation()
 
@@ -1513,7 +1513,21 @@ public class Qwen3ASRModel: Module {
                         eval(logits)
 
                         var chunkTokens: [Int] = []
-                        var languagePrefixBuffer = ""
+                        var chunkText = QwenStreamText()
+
+                        func emit(_ delta: String) {
+                            guard !delta.isEmpty else { return }
+                            if chunkText.emitted == delta {
+                                let separator = QwenStreamText.separator(
+                                    previous: transcript, next: delta, language: resolvedLanguage)
+                                if !separator.isEmpty {
+                                    transcript += separator
+                                    continuation.yield(.token(separator))
+                                }
+                            }
+                            transcript += delta
+                            continuation.yield(.token(delta))
+                        }
 
                         for _ in 0..<remainingTokens {
                             try Task.checkCancellation()
@@ -1545,7 +1559,6 @@ public class Qwen3ASRModel: Module {
                             }
 
                             chunkTokens.append(nextToken)
-                            allGeneratedTokens.append(nextToken)
 
                             // Backstop for greedy callers (penalty == 1.0): same contract
                             // as generateSingleChunk. Disabled when penalty is set so legit
@@ -1557,18 +1570,24 @@ public class Qwen3ASRModel: Module {
                                 }
                             }
 
-                            let tokenText = tokenizer.decode(tokens: [nextToken])
+                            let decoded = tokenizer.decode(tokens: chunkTokens)
                             if resolvedLanguage == nil {
-                                languagePrefixBuffer += tokenText
-                                let parsed = model.extractLanguage(from: languagePrefixBuffer)
+                                let parsed = model.extractLanguage(from: decoded)
                                 if let detectedLanguage = parsed.language {
                                     resolvedLanguage = detectedLanguage
-                                    if !parsed.text.isEmpty {
-                                        continuation.yield(.token(parsed.text))
+                                    if let marker = decoded.range(of: "<asr_text>") {
+                                        emit(chunkText.append(String(decoded[marker.upperBound...])))
                                     }
                                 }
                             } else {
-                                continuation.yield(.token(tokenText))
+                                let visible: String
+                                if chunkIndex == 0 && language == nil,
+                                   let marker = decoded.range(of: "<asr_text>") {
+                                    visible = String(decoded[marker.upperBound...])
+                                } else {
+                                    visible = decoded
+                                }
+                                emit(chunkText.append(visible))
                             }
 
                             let nextTokenArray = MLXArray([Int32(nextToken)]).expandedDimensions(axis: 0)
@@ -1579,9 +1598,15 @@ public class Qwen3ASRModel: Module {
                         totalGenerationTokens += chunkTokens.count
                         remainingTokens -= chunkTokens.count
 
-                        if resolvedLanguage == nil && !languagePrefixBuffer.isEmpty {
-                            continuation.yield(.token(languagePrefixBuffer))
+                        let decodedChunk = tokenizer.decode(tokens: chunkTokens)
+                        let finalChunk: String
+                        if chunkIndex == 0 && language == nil,
+                           let marker = decodedChunk.range(of: "<asr_text>") {
+                            finalChunk = String(decodedChunk[marker.upperBound...])
+                        } else {
+                            finalChunk = decodedChunk
                         }
+                        emit(chunkText.finish(finalChunk))
 
                         Memory.clearCache()
                     }
@@ -1603,10 +1628,8 @@ public class Qwen3ASRModel: Module {
                     continuation.yield(.info(info))
 
                     // Emit final result
-                    let decodedText = tokenizer.decode(tokens: allGeneratedTokens)
-                    let parsed = model.extractLanguage(from: decodedText)
-                    let outputLanguage = resolvedLanguage ?? parsed.language
-                    let text = language == nil ? parsed.text : decodedText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let outputLanguage = resolvedLanguage
+                    let text = transcript
                     let output = STTOutput(
                         text: text,
                         language: outputLanguage,

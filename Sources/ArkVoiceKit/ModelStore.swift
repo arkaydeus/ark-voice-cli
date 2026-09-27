@@ -51,17 +51,21 @@ private struct DownloadMarker: Codable, Equatable {
 public enum ModelStoreError: LocalizedError {
   case invalidRepository(String)
   case incompleteModel(String, [String])
-  /// Titles of the missing models, and the `download` argument that fetches them.
-  case missingModels([String], download: ModelSelection)
+  /// Titles of the missing models, and download arguments that fetch all of them.
+  case missingModels([String], downloads: [ModelSelection])
 
   public var errorDescription: String? {
     switch self {
     case .invalidRepository(let repository):
-      "Invalid Hugging Face repository ID: \(repository)"
+      return "Invalid Hugging Face repository ID: \(repository)"
     case .incompleteModel(let model, let problems):
-      "Downloaded model '\(model)' failed validation: \(problems.joined(separator: ", "))"
-    case .missingModels(let models, let selection):
-      "Required model data is missing or incomplete: \(models.joined(separator: ", ")). Run 'ark-voice download \(selection.rawValue)' first."
+      return "Downloaded model '\(model)' failed validation: \(problems.joined(separator: ", "))"
+    case .missingModels(let models, let selections):
+      guard !selections.isEmpty else {
+        return "Required model data is missing or incomplete: \(models.joined(separator: ", ")). Install the named model data first."
+      }
+      let commands = selections.map { "'ark-voice download \($0.rawValue)'" }.joined(separator: " and ")
+      return "Required model data is missing or incomplete: \(models.joined(separator: ", ")). Run \(commands) first."
     }
   }
 }
@@ -348,17 +352,21 @@ public enum ModelStore {
     let missing = models.filter { !isDownloaded($0, root: root) }
     guard missing.isEmpty else {
       throw ModelStoreError.missingModels(
-        missing.map(\.title), download: narrowestSelection(covering: missing))
+        missing.map(\.title), downloads: narrowestSelections(covering: missing))
     }
   }
 
-  /// The smallest `download` argument that fetches every one of `models`.
-  static func narrowestSelection(covering models: [ModelSpec]) -> ModelSelection {
+  /// Download arguments whose combined selections fetch every requested model.
+  static func narrowestSelections(covering models: [ModelSpec]) -> [ModelSelection] {
     let wanted = Set(models.map(\.repository))
+    guard wanted.isSubset(of: all.map(\.repository)) else { return [] }
     let candidates: [ModelSelection] = [.parakeet, .parakeetUltra, .qwen, .tts, .all]
-    return candidates.first { selection in
+    if let single = candidates.first(where: { selection in
       wanted.isSubset(of: selected(selection).map(\.repository))
-    } ?? .all
+    }) { return [single] }
+    return candidates.filter { selection in
+      selection != .all && !wanted.isDisjoint(with: selected(selection).map(\.repository))
+    }
   }
 
   public static func download(

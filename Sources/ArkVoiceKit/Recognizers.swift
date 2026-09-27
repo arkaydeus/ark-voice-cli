@@ -72,6 +72,15 @@ final class ParakeetUltraRecognizer: Recognizer {
   }
 
   func transcribe(_ samples: [Float], onPartial: (String) -> Void) async throws -> String {
+    let audio = Self.paddedSamples(samples)
+    var state = TdtDecoderState.make(decoderLayers: AsrModelVersion.ultra.decoderLayers)
+    let result = try await manager.transcribe(audio, decoderState: &state)
+    try Task.checkCancellation()
+    if !result.text.isEmpty { onPartial(result.text) }
+    return result.text
+  }
+
+  static func paddedSamples(_ samples: [Float]) -> [Float] {
     var audio = samples
     let minimum = ASRConstants.minimumRequiredSamples(
       forSampleRate: VoiceSession.transcriptionSampleRate)
@@ -79,11 +88,7 @@ final class ParakeetUltraRecognizer: Recognizer {
       audio.append(contentsOf: repeatElement(0, count: minimum - audio.count))
     }
 
-    var state = TdtDecoderState.make(decoderLayers: AsrModelVersion.ultra.decoderLayers)
-    let result = try await manager.transcribe(audio, decoderState: &state)
-    try Task.checkCancellation()
-    if !result.text.isEmpty { onPartial(result.text) }
-    return result.text
+    return audio
   }
 }
 
@@ -91,6 +96,7 @@ final class ParakeetUltraRecognizer: Recognizer {
 final class QwenRecognizer: Recognizer {
   let model = TranscriptionModel.qwen
   private let qwen: Qwen3ASRModel
+  private static let cacheGate = AsyncGate()
 
   /// Longest span decoded in one pass. The library splits longer audio at
   /// quiet points near this length. Longer spans raise peak memory by more
@@ -122,6 +128,23 @@ final class QwenRecognizer: Recognizer {
   }
 
   func transcribe(_ samples: [Float], onPartial: (String) -> Void) async throws -> String {
+    try await Self.withCacheLimit {
+      try await transcribeWithCacheLimit(samples, onPartial: onPartial)
+    }
+  }
+
+  static func withCacheLimit<T>(_ body: () async throws -> T) async rethrows -> T {
+    try await withGate(cacheGate) {
+      let previousCacheLimit = Memory.cacheLimit
+      Memory.cacheLimit = cacheLimitBytes
+      defer { Memory.cacheLimit = previousCacheLimit }
+      return try await body()
+    }
+  }
+
+  private func transcribeWithCacheLimit(
+    _ samples: [Float], onPartial: (String) -> Void
+  ) async throws -> String {
     let seconds = Double(samples.count) / Double(VoiceSession.transcriptionSampleRate)
     let parameters = STTGenerateParameters(
       maxTokens: Self.tokenBudget(seconds: seconds),
@@ -130,11 +153,6 @@ final class QwenRecognizer: Recognizer {
       chunkDuration: Self.chunkSeconds,
       minChunkDuration: 1.0
     )
-
-    // The limit is process-wide; restore it so synthesis keeps its own.
-    let previousCacheLimit = Memory.cacheLimit
-    Memory.cacheLimit = Self.cacheLimitBytes
-    defer { Memory.cacheLimit = previousCacheLimit }
 
     var transcript: String?
     for try await event in qwen.generateStream(
@@ -153,6 +171,10 @@ final class QwenRecognizer: Recognizer {
     }
     // The library ends the stream quietly, without a result, when cancelled.
     try Task.checkCancellation()
+    return try Self.requireTranscript(transcript)
+  }
+
+  static func requireTranscript(_ transcript: String?) throws -> String {
     guard let transcript else {
       throw VoiceEngineError.transcriptionFailed("Qwen3-ASR finished without a transcript.")
     }

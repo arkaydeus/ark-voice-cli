@@ -1,4 +1,5 @@
 import ArkVoiceKit
+import ArkVoiceServer
 import AVFoundation
 import Foundation
 import Testing
@@ -88,6 +89,23 @@ import Testing
         for: SpeakOptions(text: .literal("x"), output: .standardOutput, sampleFormat: .f32le))
         == .f32le
     )
+  }
+
+  @Test func statusShowsRecognizerAndOldServerFallback() {
+    var status = ServerMessage(event: .status)
+    status.transcriptionModel = "qwen"
+    status.transcriptionModelLoaded = true
+    #expect(CLIRunner.renderStatus(status).contains("transcription model loaded: qwen"))
+
+    status.transcriptionModel = nil
+    #expect(CLIRunner.renderStatus(status).contains("transcription model loaded: yes"))
+    status.transcriptionModelLoaded = false
+    #expect(CLIRunner.renderStatus(status).contains("transcription model loaded: none"))
+  }
+
+  @Test func serverSessionUsesRequestedDefaultRecognizer() {
+    let session = CLIRunner.makeSession(transcriptionModel: .qwen)
+    #expect(session.configuration.transcriptionModel == .qwen)
   }
 
   private func sine(count: Int) -> [Float] {

@@ -14,8 +14,7 @@ import MLXAudioTTS
 /// generation runs at a time — because the models cannot run concurrently.
 ///
 /// Speech recognition uses one resident recognizer at a time. Each call may
-/// name a ``TranscriptionModel``; one that differs from the resident recognizer
-/// releases it before loading the new one.
+/// name a ``TranscriptionModel``; a successful load replaces the resident one.
 ///
 /// The class is `@unchecked Sendable` because it stores models that are not
 /// `Sendable`. Every access to them happens inside the gate, and the stored
@@ -33,10 +32,24 @@ public final class VoiceSession: @unchecked Sendable {
   private var chatterbox: ChatterboxModel?
   private var builtInConditioning: DefaultConditioning?
   private var recognizer: (any Recognizer)?
+  private let recognizerFactory: ((TranscriptionModel, URL) async throws -> any Recognizer)?
+  private let clearMLXCache: () -> Void
   private var conditioningCache: [String: DefaultConditioning] = [:]
 
   public init(configuration: SessionConfiguration = SessionConfiguration()) {
     self.configuration = configuration
+    self.recognizerFactory = nil
+    self.clearMLXCache = { MLX.Memory.clearCache() }
+  }
+
+  init(
+    configuration: SessionConfiguration,
+    recognizerFactory: @escaping (TranscriptionModel, URL) async throws -> any Recognizer,
+    clearMLXCache: @escaping () -> Void = { MLX.Memory.clearCache() }
+  ) {
+    self.configuration = configuration
+    self.recognizerFactory = recognizerFactory
+    self.clearMLXCache = clearMLXCache
   }
 
   /// Directory holding saved voice profiles for this session.
@@ -358,35 +371,43 @@ public final class VoiceSession: @unchecked Sendable {
 
   /// Returns the resident recognizer for `model`, loading it if needed.
   ///
-  /// A different resident recognizer is released first, but only once the
-  /// requested one is known to be downloaded, so a bad request does not cost
-  /// the server the model it already has.
-  private func loadRecognizer(_ model: TranscriptionModel) async throws -> any Recognizer {
+  /// The previous recognizer stays available if construction of its replacement fails.
+  func loadRecognizer(_ model: TranscriptionModel) async throws -> any Recognizer {
     if let cached = stateLock.withLock({ recognizer }), cached.model == model { return cached }
 
     let spec = ModelStore.spec(for: model)
     try ModelStore.requireDownloaded([spec], root: configuration.modelRoot)
 
-    // Drop the last reference before clearing MLX's cache: weights freed
-    // afterwards would land in the cache and stay allocated.
-    let releasedMLXModel = stateLock.withLock { () -> Bool in
-      defer { recognizer = nil }
-      return recognizer?.model.usesMLX == true
-    }
-    if releasedMLXModel { MLX.Memory.clearCache() }
-
     configuration.progress?(.modelLoadStarted(model: spec.title))
     let directory = ModelStore.modelDirectory(for: spec, root: configuration.modelRoot)
-    let loaded: any Recognizer =
-      switch model {
-      case .parakeet: try ParakeetRecognizer(directory: directory)
-      case .parakeetUltra: try ParakeetUltraRecognizer(directory: directory)
-      case .qwen: try await QwenRecognizer.load(directory: directory)
-      }
+    let loaded: any Recognizer
+    if let recognizerFactory {
+      loaded = try await recognizerFactory(model, directory)
+    } else {
+      loaded = try await Self.makeRecognizer(model, directory: directory)
+    }
 
-    stateLock.withLock { recognizer = loaded }
+    var previous = stateLock.withLock { () -> (any Recognizer)? in
+      let previous = recognizer
+      recognizer = loaded
+      return previous
+    }
+    let releasedMLXModel = previous?.model.usesMLX == true
+    // Release the old weights before clearing buffers they left in MLX's cache.
+    previous = nil
+    if releasedMLXModel { clearMLXCache() }
     configuration.progress?(.modelLoadFinished(model: spec.title))
     return loaded
+  }
+
+  private static func makeRecognizer(
+    _ model: TranscriptionModel, directory: URL
+  ) async throws -> any Recognizer {
+    switch model {
+    case .parakeet: try ParakeetRecognizer(directory: directory)
+    case .parakeetUltra: try ParakeetUltraRecognizer(directory: directory)
+    case .qwen: try await QwenRecognizer.load(directory: directory)
+    }
   }
 
   /// Points the model at the requested voice.

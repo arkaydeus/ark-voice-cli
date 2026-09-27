@@ -177,7 +177,7 @@ public final class VoiceServer: @unchecked Sendable {
     stateLock.withLock { bufferedSamples = max(0, bufferedSamples - count) }
   }
 
-  fileprivate func statusMessage() -> ServerMessage {
+  func statusMessage() -> ServerMessage {
     var message = ServerMessage(event: .status)
     message.version = arkVoiceProtocolVersion
     message.synthesisModelLoaded = session.isSynthesisModelLoaded
