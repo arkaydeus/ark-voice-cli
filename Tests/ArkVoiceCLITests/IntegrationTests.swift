@@ -62,8 +62,9 @@ import Testing
   @Test(
     .enabled(
       if: ProcessInfo.processInfo.environment["ARK_VOICE_INTEGRATION_BINARY"] != nil
-        && ProcessInfo.processInfo.environment["ARK_VOICE_INTEGRATION_STT_AUDIO"] != nil,
-      "Set ARK_VOICE_INTEGRATION_BINARY and ARK_VOICE_INTEGRATION_STT_AUDIO to run STT integration."
+        && ProcessInfo.processInfo.environment["ARK_VOICE_INTEGRATION_STT_AUDIO"] != nil
+        && ProcessInfo.processInfo.environment["ARK_VOICE_INTEGRATION_STT_WORDS"]?.isEmpty == false,
+      "Set ARK_VOICE_INTEGRATION_BINARY, ARK_VOICE_INTEGRATION_STT_AUDIO and ARK_VOICE_INTEGRATION_STT_WORDS to run STT integration."
     )
   )
   func sttOutputWhenEnabled() throws {
@@ -76,7 +77,11 @@ import Testing
 
     let result = try runBinary(binary, ["stt", audio])
     #expect(result.status == 0)
-    #expect(!result.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    let expected = try #require(environment["ARK_VOICE_INTEGRATION_STT_WORDS"])
+    let heard = result.standardOutput.lowercased().split { !$0.isLetter && !$0.isNumber }
+    for word in expected.lowercased().split(whereSeparator: { $0.isWhitespace }) {
+      #expect(heard.contains(word), "Expected spoken word '\(word)' in: \(result.standardOutput)")
+    }
   }
 
 

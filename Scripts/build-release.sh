@@ -5,6 +5,10 @@ set -euo pipefail
 project_root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$project_root"
 
+# Resolve and audit the exact graph before compiling distributable code.
+mkdir -p .build
+swift package show-dependencies --format json > .build/release-dependencies.json
+python3 Scripts/check-release-dependencies.py .build/release-dependencies.json
 swift build -c release
 
 mlx_version="0.31.6"

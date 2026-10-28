@@ -40,8 +40,8 @@ commit="$(git rev-parse --short HEAD)"
 
 package_name="ark-voice-$version-macos-arm64"
 dist_directory="$project_root/dist"
-zip_path="$dist_directory/$package_name.zip"
-checksum_path="$zip_path.sha256"
+final_zip_path="$dist_directory/$package_name.zip"
+checksum_path="$final_zip_path.sha256"
 
 release_directory="$project_root/.build/release"
 # Swift 6.2+ back-deploys Span through this library. The binary links it from
@@ -59,6 +59,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
+zip_path="$work_directory/$package_name.zip"
 stage="$work_directory/stage/$package_name"
 
 echo "==> Packaging ark-voice $version ($commit)"
@@ -157,8 +158,12 @@ check_transcript "stt" "$sentence_words" "$("$binary" stt "$smoke_output/speech.
 check_transcript "stt from M4A on stdin" "$sentence_words" "$("$binary" stt - <"$smoke_output/speech.m4a")"
 for optional in "Parakeet Ultra (Core ML):parakeet-ultra" "Qwen3-ASR 1.7B 8-bit:qwen"; do
   if grep -q "^${optional%%:*} \[downloaded\]" "$work_directory/models.txt"; then
-    check_transcript "stt --model ${optional##*:}" "$sentence_words" \
-      "$("$binary" stt "$smoke_output/speech.wav" --model "${optional##*:}" 2>>"$smoke_output/stt.log")"
+    if ! transcript="$("$binary" stt "$smoke_output/speech.wav" --model "${optional##*:}" 2>"$smoke_output/stt.log")"; then
+      cat "$smoke_output/stt.log" >&2
+      fail "stt --model ${optional##*:} failed"
+    fi
+    cat "$smoke_output/stt.log" >&2
+    check_transcript "stt --model ${optional##*:}" "$sentence_words" "$transcript"
   else
     echo "  stt --model ${optional##*:}: skipped, model not installed"
   fi
@@ -169,9 +174,13 @@ socket="$work_directory/av.sock"
 server_pid=$!
 for _ in $(seq 1 200); do
   [[ -S "$socket" ]] && break
+  kill -0 "$server_pid" 2>/dev/null || break
   sleep 0.05
 done
-[[ -S "$socket" ]] || fail "serve did not create its socket; see the log above"
+if [[ ! -S "$socket" ]] || ! kill -0 "$server_pid" 2>/dev/null; then
+  cat "$smoke_output/serve.log" >&2
+  fail "serve did not start with a live socket; see stderr above"
+fi
 "$binary" client tts "The server answers every request quickly." \
   -o "$smoke_output/client.wav" --socket "$socket" >/dev/null
 check_transcript "client stt" "server|answers|request|quickly" \
@@ -185,8 +194,6 @@ server_pid=""
 
 echo
 echo "==> Zip"
-mkdir -p "$dist_directory"
-rm -f "$zip_path" "$checksum_path"
 # Extended attributes (such as com.apple.provenance) would otherwise be stored
 # as AppleDouble ._ files that `unzip` leaves beside each file. The signatures
 # are embedded in the Mach-O files and do not need them.
@@ -204,8 +211,12 @@ if ! xcrun notarytool submit "$zip_path" --keychain-profile "$notary_profile" --
   rm -f "$zip_path"
   exit 1
 fi
-submission_id="$(plutil -extract id raw -o - "$notary_result")"
-submission_status="$(plutil -extract status raw -o - "$notary_result")"
+if ! submission_id="$(plutil -extract id raw -o - "$notary_result")" \
+  || ! submission_status="$(plutil -extract status raw -o - "$notary_result")" \
+  || [[ -z "$submission_id" || -z "$submission_status" ]]; then
+  cat "$notary_result" >&2
+  fail "notarytool returned malformed submission data"
+fi
 echo "Submission $submission_id: $submission_status"
 if [[ "$submission_status" != "Accepted" ]]; then
   xcrun notarytool log "$submission_id" --keychain-profile "$notary_profile" >&2 || true
@@ -230,15 +241,21 @@ find "$extracted" -type f -exec xattr -w com.apple.quarantine "$quarantine" {} +
 for code in "$extracted/ark-voice" "$extracted/$span_library_name"; do
   [[ -f "$code" ]] || continue
   codesign --verify --strict --check-notarization --verbose=2 "$code"
-  assessment="$(spctl --assess --type install --verbose=4 "$code" 2>&1)"
+  assessment_status=0
+  assessment="$(spctl --assess --type install --verbose=4 "$code" 2>&1)" || assessment_status=$?
   echo "$assessment"
-  grep -q "source=Notarized Developer ID" <<<"$assessment" \
-    || fail "Gatekeeper did not accept $code as notarized"
+  if ((assessment_status != 0)) || ! grep -q "source=Notarized Developer ID" <<<"$assessment"; then
+    fail "Gatekeeper did not accept $code as notarized (status $assessment_status)"
+  fi
 done
 [[ "$("$extracted/ark-voice" --version)" == "ark-voice $version" ]] \
   || fail "the quarantined executable did not run"
 
-(cd "$dist_directory" && shasum -a 256 "$package_name.zip" >"$package_name.zip.sha256")
+(cd "$work_directory" && shasum -a 256 "$package_name.zip" >"$package_name.zip.sha256")
+mkdir -p "$dist_directory"
+mv "$zip_path" "$final_zip_path"
+mv "$work_directory/$package_name.zip.sha256" "$checksum_path"
+zip_path="$final_zip_path"
 
 echo
 echo "==> Release artifact"

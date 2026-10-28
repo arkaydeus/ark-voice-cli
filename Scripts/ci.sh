@@ -9,6 +9,7 @@
 #   ARK_VOICE_INTEGRATION_STT_AUDIO  Audio for the STT tests. When unset, CI
 #                                    synthesizes a short clip with the release
 #                                    binary and transcribes that.
+#   ARK_VOICE_INTEGRATION_STT_WORDS  Space-separated expected words for custom audio.
 
 set -euo pipefail
 
@@ -142,6 +143,7 @@ integration_tests() {
   local -x ARK_VOICE_TEST_MLX=1
   local -x ARK_VOICE_INTEGRATION_BINARY="$release_binary"
   local -x ARK_VOICE_INTEGRATION_STT_AUDIO="$stt_audio"
+  local -x ARK_VOICE_INTEGRATION_STT_WORDS="$stt_words"
   swift_test integration --filter IntegrationTests
 }
 
@@ -175,8 +177,12 @@ fi
 
 if [[ -n "${ARK_VOICE_INTEGRATION_STT_AUDIO:-}" ]]; then
   stt_audio="$ARK_VOICE_INTEGRATION_STT_AUDIO"
+  [[ -s "$stt_audio" ]] || { echo "error: STT audio does not exist or is empty: $stt_audio" >&2; exit 1; }
+  stt_words="${ARK_VOICE_INTEGRATION_STT_WORDS:-}"
+  [[ "$stt_words" =~ [[:alnum:]] ]] || { echo "error: set ARK_VOICE_INTEGRATION_STT_WORDS for custom audio" >&2; exit 1; }
 else
   stt_audio="$work_directory/ci-sample.wav"
+  stt_words="short recording local test run"
   run_step "Synthesize STT sample" synthesize_stt_sample
 fi
 

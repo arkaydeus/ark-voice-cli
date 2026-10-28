@@ -335,7 +335,9 @@ first failure:
 Steps 3 and 4 run when their models are installed under `~/.ark-voice-cli` and are reported as
 skipped otherwise: step 3 needs the default models from `ark-voice download`, and step 4 also needs
 `parakeet-ultra` and `qwen`. The STT tests transcribe `ARK_VOICE_INTEGRATION_STT_AUDIO` if it is set,
-and otherwise a clip that CI synthesizes first. The run ends with a pass/fail summary, and each test
+and otherwise a clip that CI synthesizes first. For custom audio, also set
+`ARK_VOICE_INTEGRATION_STT_WORDS` to space-separated words spoken in the clip; each
+word must appear in the transcript. The run ends with a pass/fail summary, and each test
 log is kept under `.build/ci/`.
 
 The pieces can also be run by hand. The model-independent suite needs nothing else:
@@ -369,13 +371,20 @@ The model-backed integration tests use the release binary:
 ```sh
 ARK_VOICE_INTEGRATION_BINARY=.build/release/ark-voice \
   ARK_VOICE_INTEGRATION_STT_AUDIO=/path/to/sample.wav \
+  ARK_VOICE_INTEGRATION_STT_WORDS="words spoken in sample" \
   swift test --skip-build --filter IntegrationTests
 ```
 
 Those cover writing a file, streaming a WAV to stdout, and a full round trip through the daemon:
 synthesize a sentence, transcribe the result, and confirm the models stayed loaded. With
-`ARK_VOICE_TEST_MODELS=1` and the metallib packaged as above, the recognizer and server suites also
-load Parakeet Ultra and Qwen3-ASR.
+`ARK_VOICE_TEST_MODELS=1`, `ARK_VOICE_INTEGRATION_STT_AUDIO=/path/to/sample.wav`, and
+the metallib packaged as above, the recognizer and server suites also
+load Parakeet Ultra and Qwen3-ASR. Recognizer transcription tests skip when the audio
+variable is missing or empty.
+
+Run `python3 Scripts/test-release-workflows.py` on macOS for isolated release failure
+and CI branch checks. These use command fixtures for signing, notarization, and models,
+and real `ditto`/`unzip` to verify archive contents.
 
 ## Cutting a release
 
@@ -387,14 +396,21 @@ hosted CI service.
 2. Run `./Scripts/ci.sh`.
 3. Run `./Scripts/package-release.sh`.
 
-The packaging script refuses to run on a dirty working tree. It builds the release, then signs
+The packaging script refuses to run on a dirty working tree. Release builds audit the
+resolved dependencies against `Docs/release-dependencies.json` (exact pins and license
+hashes); changes require reviewing the source license and updating that inventory and
+`THIRD_PARTY_NOTICES.md`. swift-huggingface uses HTTP downloads with its optional Xet
+trait disabled, excluding swift-xet from the resolved graph. It builds the release, then signs
 `ark-voice` and `libswiftCompatibilitySpan.dylib` with the hardened runtime and a secure timestamp.
 It runs the signed binary from a directory holding only the release files: `tts` to WAV and M4A,
 `stt` from a file and from stdin with every installed recognizer, and a `serve`/`client` round trip.
-It zips the files with `ditto`, submits the zip with `notarytool` and waits for the result, then
+It zips the files in a temporary directory with `ditto`, submits the zip with `notarytool`,
+waits for the result, then
 verifies a quarantined copy of the zip's contents with `codesign --verify --strict` and
 `spctl --assess --type install`. (`spctl --type execute` only accepts app bundles and rejects any
-bare executable.) The result is:
+bare executable.) Only after verification and checksum generation does it move the
+archive and checksum into `dist`; a failed attempt preserves any existing verified
+release. The result is:
 
 ```text
 dist/ark-voice-<version>-macos-arm64.zip
