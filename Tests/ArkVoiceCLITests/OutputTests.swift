@@ -1,3 +1,4 @@
+import ArkVoiceClient
 import ArkVoiceKit
 import ArkVoiceServer
 import AVFoundation
@@ -92,9 +93,7 @@ import Testing
   }
 
   @Test func statusShowsRecognizerAndOldServerFallback() {
-    var status = ServerMessage(event: .status)
-    status.transcriptionModel = "qwen"
-    status.transcriptionModelLoaded = true
+    var status = ServerStatus(transcriptionModelLoaded: true, transcriptionModel: "qwen")
     #expect(CLIRunner.renderStatus(status).contains("transcription model loaded: qwen"))
 
     status.transcriptionModel = nil

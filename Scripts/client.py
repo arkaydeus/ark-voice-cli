@@ -86,6 +86,11 @@ class ArkVoice:
         while True:
             kind, frame_id, payload = self.read_frame()
             if frame_id != request_id:
+                # Request 0 carries connection-level errors, which end every request.
+                if frame_id == 0 and kind == KIND_JSON:
+                    event = json.loads(payload)
+                    if event.get("event") == "error":
+                        raise RuntimeError(f"{event.get('code')}: {event.get('message')}")
                 continue
             if kind == KIND_PCM:
                 pcm += payload

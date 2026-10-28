@@ -1,3 +1,4 @@
+import ArkVoiceClient
 import ArkVoiceKit
 import ArkVoiceServer
 import Darwin
@@ -139,9 +140,12 @@ enum CLIRunner {
   // MARK: - Server
 
   static func serve(_ options: ServeOptions) async throws {
-    let session = makeSession(transcriptionModel: options.transcriptionModel)
+    var sessionConfiguration = SessionConfiguration.fromEnvironment(progress: reportProgress)
+    if let root = options.modelRoot { sessionConfiguration.modelRoot = URL(fileURLWithPath: root) }
+    if let model = options.transcriptionModel { sessionConfiguration.transcriptionModel = model }
+    let session = VoiceSession(configuration: sessionConfiguration)
     let configuration = VoiceServer.Configuration(
-      socketPath: options.socketPath ?? defaultSocketPath(),
+      socketPath: options.socketPath ?? defaultSocketPath(modelRoot: sessionConfiguration.modelRoot),
       idleUnloadSeconds: options.idleUnloadSeconds,
       idleExitSeconds: options.idleExitSeconds,
       log: { writeStandardError($0 + "\n") }
@@ -168,46 +172,47 @@ enum CLIRunner {
 
   // MARK: - Client
 
+  /// The `client` subcommand runs on `ArkVoiceClient`, the same dependency-free
+  /// library an app would use, so the CLI exercises it end to end.
   static func runClient(_ command: ClientCommand) async throws {
     switch command {
     case .tts(let options, let socketPath):
-      try clientSpeak(options, socketPath: socketPath)
+      try await clientSpeak(options, socketPath: socketPath)
     case .stt(let options, let socketPath):
-      try clientTranscribe(options, socketPath: socketPath)
+      try await clientTranscribe(options, socketPath: socketPath)
     case .voices(let socketPath):
-      let client = try connect(socketPath)
+      let client = try await connect(socketPath)
       defer { client.close() }
-      let names = try client.voices()
+      let names = try await client.voices()
       writeStandardOutput(names.isEmpty ? "No saved voices.\n" : names.joined(separator: "\n") + "\n")
     case .status(let socketPath):
-      let client = try connect(socketPath)
+      let client = try await connect(socketPath)
       defer { client.close() }
-      let status = try client.status()
-      writeStandardOutput(renderStatus(status))
+      writeStandardOutput(renderStatus(try await client.status()))
     case .unload(let socketPath):
-      let client = try connect(socketPath)
+      let client = try await connect(socketPath)
       defer { client.close() }
-      try client.unload()
+      try await client.unload()
       writeStandardError("Server released its models.\n")
     }
   }
 
-  static func renderStatus(_ status: ServerMessage) -> String {
+  static func renderStatus(_ status: ServerStatus) -> String {
     """
-    protocol: \(status.version ?? 0)
-    synthesis model loaded: \(status.synthesisModelLoaded ?? false)
-    transcription model loaded: \(status.transcriptionModel ?? (status.transcriptionModelLoaded == true ? "yes" : "none"))
-    requests served: \(status.requestsServed ?? 0)
-    uptime: \(Int(status.uptimeSeconds ?? 0))s
+    protocol: \(status.version)
+    synthesis model loaded: \(status.synthesisModelLoaded)
+    transcription model loaded: \(status.transcriptionModel ?? (status.transcriptionModelLoaded ? "yes" : "none"))
+    requests served: \(status.requestsServed)
+    uptime: \(Int(status.uptimeSeconds))s
 
     """
   }
 
-  private static func connect(_ socketPath: String?) throws -> VoiceClient {
-    try VoiceClient(socketPath: socketPath ?? defaultSocketPath())
+  private static func connect(_ socketPath: String?) async throws -> ArkVoiceConnection {
+    try await ArkVoiceConnection.connect(socketPath: socketPath ?? defaultSocketPath())
   }
 
-  private static func clientSpeak(_ options: SpeakOptions, socketPath: String?) throws {
+  private static func clientSpeak(_ options: SpeakOptions, socketPath: String?) async throws {
     guard options.reference == nil else {
       throw CLIParseError.message(
         "The server speaks saved voices only. Create one with 'ark-voice voice create <name> <audio>' and pass --voice."
@@ -215,16 +220,15 @@ enum CLIRunner {
     }
     let text = try readText(options.text)
     let writer = try SpeechWriter(options: options)
-    let client = try connect(socketPath)
+    let client = try await connect(socketPath)
     defer { client.close() }
 
     writer.announce()
-    _ = try client.synthesize(
-      text: text,
-      voice: options.voice,
-      format: wireFormat(for: options)
-    ) { samples, sampleRate in
-      writer.write(samples, sampleRate: sampleRate)
+    let format = SampleFormat(wireFormat(for: options))
+    for try await event in client.synthesize(text, voice: options.voice, format: format) {
+      if case .audio(let chunk, _) = event {
+        writer.write(chunk.samples, sampleRate: chunk.sampleRate)
+      }
     }
     if let path = try writer.finish() {
       writeStandardOutput(path + "\n")
@@ -242,13 +246,22 @@ enum CLIRunner {
     }
   }
 
-  private static func clientTranscribe(_ options: TranscribeOptions, socketPath: String?) throws {
+  private static func clientTranscribe(
+    _ options: TranscribeOptions,
+    socketPath: String?
+  ) async throws {
     let samples = try readTranscriptionSamples(options)
-    let client = try connect(socketPath)
+    let client = try await connect(socketPath)
     defer { client.close() }
 
-    let transcript = try client.transcribe(samples: samples, model: options.model) { delta in
-      emitPartialTranscript(delta, options: options)
+    let audio = PCMAudio(samples: samples, sampleRate: VoiceSession.transcriptionSampleRate)
+    let model = options.model.map { STTModel(rawValue: $0.rawValue) }
+    var transcript = ""
+    for try await event in client.transcribe(audio, model: model) {
+      switch event {
+      case .partial(let delta): emitPartialTranscript(delta, options: options)
+      case .final(let text): transcript = text
+      }
     }
     if options.stream, options.output == nil { writeStandardOutput("\n") }
     try emit(transcript: transcript, options: options)
@@ -273,5 +286,14 @@ enum CLIRunner {
   ) -> PartialTranscriptDestination {
     guard options.stream else { return .none }
     return options.output == nil ? .standardOutput : .standardError
+  }
+}
+
+extension SampleFormat {
+  init(_ format: PCMSampleFormat) {
+    switch format {
+    case .f32le: self = .f32le
+    case .s16le: self = .s16le
+    }
   }
 }

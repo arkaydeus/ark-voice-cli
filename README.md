@@ -271,7 +271,10 @@ What this buys, measured on an M-series Mac with the weights already in the page
 | `ark-voice client tts` (resident models) | ~0.24 s |
 
 Requests may be pipelined on one connection — every frame carries its request id — though model work
-still runs one at a time. `--idle-unload` (default 300 s) releases the models during quiet periods,
+still runs one at a time. `serve --model-root /path/to/root` isolates models, voice profiles,
+and the default socket under that root. Binding integration tests use temporary roots,
+sharing only the existing `mlx-audio` model directory through a symlink.
+`--idle-unload` (default 300 s) releases the models during quiet periods,
 and `Scripts/com.ark-voice.serve.plist` is an example launchd agent.
 
 With `stt --stream -o transcript.txt`, incremental text is written to stderr while the final
@@ -280,6 +283,39 @@ transcript is installed atomically at the requested path. Without `-o`, incremen
 Live microphone transcription is not supported: the recognizer needs the whole recording before it
 starts, so the socket takes a complete utterance and streams the text back. The protocol leaves room
 for a `stt-live` operation to be added without breaking clients.
+
+## Language bindings
+
+Typed client libraries for the server. Each one speaks the socket protocol directly, so the models
+stay in the one `ark-voice serve` process and no ML code loads into yours:
+
+| Language | Where | Shape |
+| --- | --- | --- |
+| Swift | [`ArkVoiceClient`](bindings/swift/README.md) library product | `async`/`await`, `RequestStream`; Foundation only |
+| TypeScript | [`bindings/typescript`](bindings/typescript/README.md) | Node 18+ and Bun, async iterables, zero runtime dependencies |
+| Python | [`bindings/python`](bindings/python/README.md) | 3.10+, standard library only, sync and asyncio clients |
+
+All three cover the handshake and version check, streaming synthesis with WAV output, transcription
+from samples or a WAV file with streaming partial and final text, voice profiles, `status`,
+`unload`, typed errors for every protocol error code, cancellation, and pipelined requests on one
+connection. They default to `~/.ark-voice-cli/ark-voice.sock`; set `ARK_VOICE_SOCKET` or pass a path
+to override it.
+
+```python
+from ark_voice import Client
+
+with Client() as voice:
+    voice.synthesize_to_wav("Hello from Python", "hello.wav")
+    print(voice.transcribe_text(voice.synthesize_audio("Round trip").audio))
+```
+
+The bindings test against shared byte vectors in
+[`bindings/test-vectors`](bindings/test-vectors/README.md), and each has an integration suite that
+starts a real server when one is built.
+
+Swift streaming methods return `RequestStream<Element>`, a single-consumer async sequence.
+Leaving its loop cancels unfinished work even if the sequence remains retained;
+call `stream.cancel()` to stop an unused or manually retained iterator.
 
 ## Notes
 

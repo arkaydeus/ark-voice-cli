@@ -11,6 +11,7 @@ let package = Package(
     .executable(name: "ark-voice", targets: ["ArkVoiceCLI"]),
     .library(name: "ArkVoiceKit", targets: ["ArkVoiceKit"]),
     .library(name: "ArkVoiceServer", targets: ["ArkVoiceServer"]),
+    .library(name: "ArkVoiceClient", targets: ["ArkVoiceClient"]),
   ],
   dependencies: [
     .package(path: "Vendor/mlx-audio-swift"),
@@ -49,11 +50,13 @@ let package = Package(
     ),
     .target(
       name: "ArkVoiceServer",
-      dependencies: ["ArkVoiceKit"]
+      dependencies: ["ArkVoiceKit", "ArkVoiceClient"]
     ),
+    // Talks to a running `ark-voice serve`; deliberately free of ML dependencies.
+    .target(name: "ArkVoiceClient"),
     .executableTarget(
       name: "ArkVoiceCLI",
-      dependencies: ["ArkVoiceKit", "ArkVoiceServer"]
+      dependencies: ["ArkVoiceKit", "ArkVoiceServer", "ArkVoiceClient"]
     ),
     .testTarget(
       name: "ArkVoiceKitTests",
@@ -74,10 +77,18 @@ let package = Package(
       ]
     ),
     .testTarget(
+      name: "ArkVoiceClientTests",
+      dependencies: [
+        "ArkVoiceClient",
+        .product(name: "Testing", package: "swift-testing"),
+      ]
+    ),
+    .testTarget(
       name: "ArkVoiceCLITests",
       dependencies: [
         "ArkVoiceCLI",
         "ArkVoiceServer",
+        "ArkVoiceClient",
         .product(name: "Testing", package: "swift-testing"),
       ]
     ),

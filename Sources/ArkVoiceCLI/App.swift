@@ -15,7 +15,7 @@ let usage = """
     ark-voice voice create <name> <reference-audio>
     ark-voice voices
     ark-voice models
-    ark-voice serve [--socket path] [--idle-unload seconds|off] [--idle-exit seconds|off] [--stt-model name]
+    ark-voice serve [--model-root path] [--socket path] [--idle-unload seconds|off] [--idle-exit seconds|off] [--stt-model name]
     ark-voice client <tts|stt|voices|status|unload> [--socket path] ...
 
   COMMANDS

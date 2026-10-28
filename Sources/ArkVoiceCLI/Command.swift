@@ -89,6 +89,7 @@ struct SpeakOptions: Equatable {
 }
 
 struct ServeOptions: Equatable {
+  var modelRoot: String?
   var socketPath: String?
   /// Release models after this many idle seconds; `nil` keeps them resident.
   var idleUnloadSeconds: Double?
@@ -99,11 +100,13 @@ struct ServeOptions: Equatable {
 
   init(
     socketPath: String? = nil,
+    modelRoot: String? = nil,
     idleUnloadSeconds: Double? = 300,
     idleExitSeconds: Double? = nil,
     transcriptionModel: TranscriptionModel? = nil
   ) {
     self.socketPath = socketPath
+    self.modelRoot = modelRoot
     self.idleUnloadSeconds = idleUnloadSeconds
     self.idleExitSeconds = idleExitSeconds
     self.transcriptionModel = transcriptionModel
@@ -400,6 +403,12 @@ enum CLIParser {
           throw CLIParseError.message("--socket requires a path.")
         }
         options.socketPath = arguments[index]
+      case "--model-root":
+        index += 1
+        guard index < arguments.count, !arguments[index].isEmpty else {
+          throw CLIParseError.message("--model-root requires a path.")
+        }
+        options.modelRoot = arguments[index]
       case "--idle-unload":
         index += 1
         guard index < arguments.count else {

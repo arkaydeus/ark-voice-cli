@@ -1,0 +1,3 @@
+[test]
+# test-node/ holds the node:test smoke test for the built package; run it with `npm run test:node`.
+root = "test"
