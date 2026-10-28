@@ -1,0 +1,56 @@
+## Requirements
+
+- Apple Silicon Mac
+- macOS 14 or newer
+- Swift 6.2 or newer
+- Xcode Command Line Tools
+- Internet access for the one-time model download
+
+## Build from source
+
+```sh
+git clone https://github.com/arkaydeus/ark-voice-cli
+cd ark-voice-cli
+./Scripts/build-release.sh
+```
+
+MLX's Swift package cannot build its Metal shaders with a plain `swift build`. The build script
+compiles the Swift executable, then fetches the checksum-pinned Metal runtime from the matching
+official MLX Swift 0.31.6 release.
+
+The runtime archive is about 200 MB and is cached under `.build/artifacts`. It is the GPU runtime,
+not a speech model. The build leaves two files that must stay in the same directory:
+
+```text
+.build/release/ark-voice
+.build/release/mlx.metallib
+```
+
+<Callout type="warning" title="Keep the metallib beside the binary">
+  `ark-voice` looks for `mlx.metallib` next to its own executable. Copying the
+  binary somewhere else on its own leaves MLX without its shaders.
+</Callout>
+
+## Install system-wide
+
+Install both files into a private directory and link the executable onto your `PATH`. The symlink
+keeps the real binary beside its metallib:
+
+```sh
+sudo install -d /usr/local/libexec/ark-voice /usr/local/bin
+sudo install -m 755 .build/release/ark-voice /usr/local/libexec/ark-voice/ark-voice
+sudo install -m 644 .build/release/mlx.metallib /usr/local/libexec/ark-voice/mlx.metallib
+sudo ln -sfn /usr/local/libexec/ark-voice/ark-voice /usr/local/bin/ark-voice
+```
+
+Check it:
+
+```sh
+ark-voice --version
+ark-voice models
+```
+
+## Next
+
+The executable does not include any models. Run `ark-voice download` before your first
+transcription or synthesis; see [Models and downloads](/docs/models).

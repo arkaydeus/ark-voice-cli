@@ -1,0 +1,106 @@
+`ArkVoiceKit` is a library product. A Swift host links it and runs the models in its own process:
+no IPC, no serialization, and the models stay loaded between calls.
+
+If you would rather keep a gigabyte of weights out of your process, use the
+[server](/docs/server) and the [Swift client](/docs/swift-client) instead.
+
+## Add the package
+
+```swift
+.package(path: "../ark-voice-cli"),
+// ...
+.product(name: "ArkVoiceKit", package: "ark-voice-cli"),
+```
+
+## Create a session
+
+```swift
+import ArkVoiceKit
+
+let session = VoiceSession(configuration: SessionConfiguration(
+  modelRoot: URL(fileURLWithPath: NSHomeDirectory()).appending(path: ".ark-voice-cli"),
+  progress: { event in print(event) }   // nothing is written to stdout or stderr for you
+))
+```
+
+`SessionConfiguration` fields:
+
+| Field                    | Default            | Meaning                                                    |
+| ------------------------ | ------------------ | ---------------------------------------------------------- |
+| `modelRoot`              | `~/.ark-voice-cli` | Downloaded models and saved voices                         |
+| `hfToken`                | `nil`              | Hugging Face token for downloads                           |
+| `metallibURL`            | `nil`              | MLX's `mlx.metallib`; `nil` searches beside the executable |
+| `maximumChunkCharacters` | `300`              | Longest text chunk per synthesis pass                      |
+| `silenceBetweenChunks`   | `0.15`             | Seconds of silence between chunks                          |
+| `transcriptionModel`     | `.parakeet`        | Recognizer when a call does not name one                   |
+| `progress`               | `nil`              | Receives `ProgressEvent`s; `nil` discards them             |
+
+`SessionConfiguration.fromEnvironment(progress:)` reads `HF_TOKEN` from the environment. The
+plain initializer does not, because reading the environment is the host's decision.
+
+## Synthesize
+
+Audio arrives chunk by chunk, as it is generated:
+
+```swift
+for try await chunk in session.synthesize("Hello", voice: .named("narrator")) {
+  player.enqueue(chunk.samples)         // mono Float32 at chunk.sampleRate (24 kHz)
+}
+
+let (samples, sampleRate) = try await session.synthesizeAll("Hello")
+```
+
+`voice` is a `VoiceSelection`: `.standard` (Chatterbox's built-in voice), `.named(String)` for a
+saved profile, or `.reference(samples:)` for zero-shot cloning.
+
+## Transcribe
+
+```swift
+for try await event in session.transcribe(samples: recordedAt16kHz, model: .parakeetUltra) {
+  switch event {
+  case .partial(let text): print(text, terminator: "")
+  case .final(let text): print("\n" + text)
+  }
+}
+
+let text = try await session.transcribeAll(samples: recordedAt16kHz)
+for try await event in session.transcribeFile(at: url) { /* ... */ }
+```
+
+`model` is optional and defaults to `SessionConfiguration.transcriptionModel`. `AudioDecoding`
+converts files and raw PCM into the `[Float]` buffers the API takes.
+
+## Voices
+
+```swift
+let url = try await session.createVoice(name: "narrator", referenceSamples: samples)
+let names = try session.voiceNames()
+```
+
+## Model lifetime
+
+```swift
+try await session.preloadSynthesisModel()
+try await session.preloadTranscriptionModel(.parakeetUltra)
+await session.unloadModels()            // waits for current work, then releases the models
+```
+
+The first call to each side loads that model; every later call pays only for inference. One
+recognizer is resident at a time: asking for a different one releases the current one first.
+
+`isSynthesisModelLoaded`, `isTranscriptionModelLoaded` and `loadedTranscriptionModel` report what
+is resident.
+
+## Concurrency
+
+A session is safe to share across tasks. Model work is serialized internally, because the models
+cannot run concurrently.
+
+## Shipping the Metal runtime
+
+A host that embeds the kit must ship MLX's `mlx.metallib` and point
+`SessionConfiguration.metallibURL` at it, or place it beside the executable. Parakeet Ultra runs on
+Core ML and does not need it.
+
+A host also has its own Core ML cache. Call `preloadTranscriptionModel(.parakeetUltra)` once after
+installing Parakeet Ultra so the Neural Engine compilation happens up front.

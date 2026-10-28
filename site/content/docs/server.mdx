@@ -1,0 +1,80 @@
+`ark-voice serve` keeps the models in memory and answers requests over a Unix socket. Use it for
+callers that are not Swift, or that would rather keep a gigabyte of weights out of their own
+address space.
+
+## Start the server
+
+```sh
+ark-voice serve                                    # ~/.ark-voice-cli/ark-voice.sock, mode 0600
+ark-voice serve --socket /tmp/av.sock --idle-unload 120 --idle-exit off
+ark-voice serve --stt-model parakeet-ultra         # recognizer for requests that do not name one
+```
+
+| Option                       | Default                           | Meaning                                                                          |
+| ---------------------------- | --------------------------------- | -------------------------------------------------------------------------------- |
+| `-s`, `--socket <path>`      | `~/.ark-voice-cli/ark-voice.sock` | Where to listen                                                                  |
+| `--model-root <path>`        | `~/.ark-voice-cli`                | Models, voice profiles and the default socket                                    |
+| `--idle-unload <s>` or `off` | `300`                             | Release the models after this many idle seconds                                  |
+| `--idle-exit <s>` or `off`   | `off`                             | Exit after this many idle seconds                                                |
+| `--stt-model <name>`         | `parakeet`                        | Recognizer for requests that do not name one                                     |
+| `--foreground`               |                                   | Accepted for launchd-style invocations; the server always runs in the foreground |
+
+## Drive it from the shell
+
+```sh
+ark-voice client tts "No reload for this one" -o quick.wav
+ark-voice client tts "Straight to the speakers" -o - | ffplay -autoexit -nodisp -
+ark-voice client stt recording.wav --stream
+ark-voice client stt recording.wav --model qwen
+ark-voice client voices
+ark-voice client status
+ark-voice client unload
+```
+
+`client tts` and `client stt` take the same options as `tts` and `stt`, plus `--socket`. The
+server speaks saved voices only, so `client tts` accepts `--voice` but not `--reference`.
+
+## What it buys
+
+Measured on an M-series Mac with the weights already in the page cache:
+
+|                                          | One short utterance |
+| ---------------------------------------- | ------------------- |
+| `ark-voice tts` (process per call)       | ~5.9 s              |
+| `ark-voice client tts` (resident models) | ~0.24 s             |
+
+## Security
+
+The socket is created with mode `0600` and stays owned by the user who started the server. It
+carries speech and voice-profile data: anything that can open the socket can synthesize speech in
+any saved voice.
+
+## Lifecycle
+
+- `--idle-unload` releases the models after a quiet period; the next request reloads them.
+- `--idle-exit` stops the server entirely after a quiet period.
+- `SIGINT` and `SIGTERM` shut down cleanly and remove the socket file.
+- A socket file left behind by a killed server is replaced automatically; a live one is never
+  stolen.
+
+Requests may be pipelined on one connection (every frame carries its request id), but model work
+runs one request at a time.
+
+## Run it at login
+
+`Scripts/com.ark-voice.serve.plist` in the repository is an example launchd agent. Copy it into
+`~/Library/LaunchAgents`, adjust the paths, and load it with `launchctl`.
+
+## Talk to it from code
+
+- [Swift client](/docs/swift-client), [TypeScript](/docs/typescript) and [Python](/docs/python)
+  bindings speak the protocol directly.
+- `Scripts/client.py` is a complete client in about 150 lines of standard-library Python:
+
+```sh
+./Scripts/client.py speak "Hello from Python" out.wav
+./Scripts/client.py transcribe recording.wav
+./Scripts/client.py transcribe recording.wav parakeet-ultra
+```
+
+- The [socket protocol](/docs/protocol) documents the wire format for writing your own.

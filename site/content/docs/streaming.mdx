@@ -1,0 +1,71 @@
+ark-voice treats stdout as a clean data channel. Diagnostics always go to stderr, so audio and text
+can be piped straight into other programs.
+
+## Audio to stdout
+
+Pass `--output -` and audio is written as it is generated, so playback starts on the first chunk
+rather than after the whole utterance:
+
+```sh
+ark-voice tts "Hello from my Mac" -o - | ffplay -autoexit -nodisp -
+ark-voice tts --file article.txt -o - > article.wav
+```
+
+Streaming to stdout produces a WAV stream whose header declares an unknown length. Players and
+ffmpeg read that as "until the stream ends".
+
+## Headerless samples
+
+Add `--raw` to drop the WAV header, and choose the sample encoding with `--format`:
+
+| `--format` | Encoding                                                              |
+| ---------- | --------------------------------------------------------------------- |
+| `f32le`    | 32-bit float, little-endian (the default)                             |
+| `s16le`    | 16-bit signed integer, little-endian: half the bytes, no audible loss |
+
+Synthesis is always 24 kHz mono. `--raw` and `--format` apply only with `--output -`. File encoding
+follows the output extension: WAV holds float samples, while M4A and AAC use AAC encoding. See the
+[output formats table](/docs/synthesis#output-formats).
+
+## Audio from stdin
+
+`ark-voice stt -` reads audio from stdin. Container formats are detected from their leading bytes:
+
+```sh
+cat recording.wav | ark-voice stt -
+```
+
+Headerless PCM needs `--input-format`, plus `--input-rate` if it is not 16 kHz:
+
+```sh
+ark-voice stt - --input-format s16le --input-rate 24000 < raw.pcm
+```
+
+## A round trip
+
+Synthesis output can feed recognition directly:
+
+```sh
+ark-voice tts "Pipe me" -o - --raw --format s16le \
+  | ark-voice stt - --input-format s16le --input-rate 24000
+```
+
+## Text as it is recognized
+
+`--stream` prints partial text as it is recognized. Concatenating the partials gives the
+transcript.
+
+```sh
+ark-voice stt long-meeting.m4a --stream
+ark-voice stt long-meeting.m4a --stream -o transcript.txt   # partials on stderr, final text in the file
+```
+
+## Through the server
+
+The same flags work with `ark-voice client`, which sends the request to a running
+[server](/docs/server) instead of loading the models itself:
+
+```sh
+ark-voice client tts "Straight to the speakers" -o - | ffplay -autoexit -nodisp -
+ark-voice client stt recording.wav --stream
+```

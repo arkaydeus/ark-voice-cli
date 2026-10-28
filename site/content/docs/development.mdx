@@ -1,0 +1,78 @@
+## Swift tests
+
+Run the model-independent suite:
+
+```sh
+swift test
+```
+
+It covers argument parsing, chunking, audio encoding and decoding, the wire protocol, and the
+server end to end over a real socket. The server tests need no models, because a session pointed
+at an empty model root answers with errors rather than loading weights.
+
+A debug test run ends with MLX reporting `Failed to load the default metallib`, because the Metal
+runtime is only packaged for release builds. The tests still pass.
+
+### Opt-in suites
+
+Tests that need MLX or downloaded models are opt-in. From the repository root, build the release
+runtime and copy it beside the debug test executable before enabling the MLX tests (run `swift test`
+first to create the debug test bundle):
+
+```sh
+./Scripts/build-release.sh
+cp .build/release/mlx.metallib \
+  .build/debug/ark-voice-cliPackageTests.xctest/Contents/MacOS/
+ARK_VOICE_TEST_MLX=1 swift test
+
+ARK_VOICE_INTEGRATION_BINARY=.build/release/ark-voice \
+  ARK_VOICE_INTEGRATION_STT_AUDIO=/path/to/sample.wav \
+  swift test
+```
+
+The integration tests cover writing a file, streaming a WAV to stdout, and a full round trip
+through the server: synthesize a sentence, transcribe the result, and confirm the models stayed
+loaded.
+
+## Binding tests
+
+Each binding checks the shared byte vectors in `bindings/test-vectors/protocol.json`, runs against
+a scripted fake server, and has an integration suite that starts a real `ark-voice serve` when one
+is built (`$ARK_VOICE_BINARY`, else `.build/release/ark-voice`). Run these commands from the
+repository root; each binding runs in a subshell so the working directory is restored afterward.
+
+```sh
+swift test --filter ArkVoiceClientTests
+
+(
+  cd bindings/typescript || exit
+  bun install && bun run typecheck && bun run test
+)
+
+(
+  cd bindings/python || exit
+  uv venv .venv && uv pip install --python .venv/bin/python -e '.[test]' && \
+    .venv/bin/python -m pytest
+)
+```
+
+Any change to the protocol must update the vectors and all three clients together.
+
+## This documentation site
+
+The site lives in `site/`. It is a Next.js app styled with Tailwind CSS and shadcn/ui, and uses Bun
+as both package manager and runtime. Tasks run through [mise](https://mise.jdx.dev) from anywhere
+in the repository:
+
+```sh
+mise install            # installs the pinned Bun
+mise run site:install   # bun install
+mise run site:dev       # http://localhost:3000
+mise run site:fmt       # bun fmt
+mise run site:check     # bun fmt --check, next typegen, bun check
+mise run site:test      # loader, heading, search and clipboard tests
+mise run site:build     # production build
+```
+
+Docs pages are MDX files in `site/content/docs`. The sidebar order, titles and descriptions are in
+`site/lib/docs.ts`; add a page there and create the matching `.mdx` file.

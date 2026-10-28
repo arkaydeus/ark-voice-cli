@@ -1,0 +1,289 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: var(--font-space-grotesk), system-ui, -apple-system, sans-serif;
+  --font-heading: var(--font-sans);
+  --font-mono:
+    var(--font-geist-mono), "SF Mono", SFMono-Regular, Menlo, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Site palette, used directly by the landing page and docs. */
+  --color-surface: var(--av-bg-alt);
+  --color-surface-soft: var(--av-bg-soft);
+  --color-subtle: var(--av-muted);
+  --color-faint: var(--av-faint);
+  --color-line: var(--av-line);
+  --color-line-soft: var(--av-line-soft);
+  --color-brand: var(--av-brand);
+  --color-brand-strong: var(--av-brand-strong);
+  --color-brand-soft: var(--av-brand-soft);
+  --color-brand-ink: var(--av-brand-ink);
+  --color-good: var(--av-good);
+  --color-term: var(--av-term);
+  --color-term-line: var(--av-term-line);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+}
+
+:root {
+  --av-bg: #ffffff;
+  --av-bg-alt: #f5f6f8;
+  --av-bg-soft: #edf0f4;
+  --av-text: #161b26;
+  --av-muted: #435064;
+  --av-faint: #5a6578;
+  --av-line: #d6dae2;
+  --av-line-soft: #e4e7ed;
+  --av-brand: #5b3fd0;
+  --av-brand-strong: #4630a8;
+  --av-brand-soft: #f0edfc;
+  --av-brand-ink: #ffffff;
+  --av-good: #1f7a55;
+  --av-term: #15161d;
+  --av-term-line: #2a2c38;
+
+  --background: var(--av-bg);
+  --foreground: var(--av-text);
+  --card: var(--av-bg-alt);
+  --card-foreground: var(--av-text);
+  --popover: var(--av-bg);
+  --popover-foreground: var(--av-text);
+  --primary: var(--av-brand);
+  --primary-foreground: var(--av-brand-ink);
+  --secondary: var(--av-bg-soft);
+  --secondary-foreground: var(--av-text);
+  --muted: var(--av-bg-alt);
+  --muted-foreground: var(--av-faint);
+  --accent: var(--av-bg-soft);
+  --accent-foreground: var(--av-text);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: var(--av-line);
+  --input: var(--av-line);
+  --ring: var(--av-brand);
+  --radius: 0.5rem;
+}
+
+.dark {
+  --av-bg: oklch(0.16 0.014 280);
+  --av-bg-alt: oklch(0.19 0.014 280);
+  --av-bg-soft: oklch(0.22 0.016 280);
+  --av-text: oklch(0.96 0.006 280);
+  --av-muted: oklch(0.8 0.012 280);
+  --av-faint: oklch(0.7 0.016 280);
+  --av-line: oklch(0.34 0.018 280 / 0.7);
+  --av-line-soft: oklch(0.34 0.018 280 / 0.4);
+  --av-brand: oklch(0.77 0.13 290);
+  --av-brand-strong: oklch(0.86 0.09 290);
+  --av-brand-soft: oklch(0.26 0.05 290);
+  --av-brand-ink: oklch(0.18 0.03 290);
+  --av-good: oklch(0.78 0.14 155);
+  --av-term: oklch(0.13 0.012 280);
+  --av-term-line: oklch(0.28 0.016 280);
+
+  --destructive: oklch(0.704 0.191 22.216);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply scroll-pt-20 font-sans;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  ::selection {
+    background: color-mix(in oklch, var(--av-brand) 25%, transparent);
+  }
+}
+
+/* Waveform bars in the hero terminal. */
+@keyframes wave {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+@utility animate-wave {
+  animation: wave 1.1s ease-in-out infinite;
+  transform-origin: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-wave {
+    animation: none;
+  }
+}
+
+/* ---------- Docs prose ---------- */
+
+.prose-docs {
+  @apply text-[1.0625rem] leading-[1.75] text-subtle;
+}
+
+.prose-docs > :first-child {
+  margin-top: 0;
+}
+
+.prose-docs h2 {
+  @apply mt-14 border-t border-line-soft pt-10 text-[1.625rem] font-medium tracking-tight text-foreground;
+}
+
+.prose-docs h3 {
+  @apply mt-10 text-xl font-medium tracking-tight text-foreground;
+}
+
+.prose-docs h4 {
+  @apply mt-8 font-semibold text-foreground;
+}
+
+.prose-docs :is(h2, h3, h4) {
+  scroll-margin-top: 5.5rem;
+}
+
+.prose-docs :is(h2, h3, h4) + * {
+  @apply mt-4;
+}
+
+.prose-docs p,
+.prose-docs ul,
+.prose-docs ol {
+  @apply my-5;
+}
+
+.prose-docs ul {
+  @apply list-disc pl-6 marker:text-faint;
+}
+
+.prose-docs ol {
+  @apply list-decimal pl-6 marker:text-faint;
+}
+
+.prose-docs li {
+  @apply my-1.5 pl-1;
+}
+
+.prose-docs li > :is(ul, ol) {
+  @apply my-1.5;
+}
+
+.prose-docs strong {
+  @apply font-semibold text-foreground;
+}
+
+.prose-docs a {
+  @apply font-medium text-brand underline decoration-brand/40 underline-offset-[3px] transition-colors hover:decoration-brand;
+}
+
+.prose-docs :not(pre) > code {
+  @apply rounded-[5px] bg-surface-soft px-[0.35em] py-[0.15em] font-mono text-[0.85em] text-brand-strong;
+}
+
+.dark .prose-docs :not(pre) > code {
+  @apply text-brand;
+}
+
+.prose-docs a > code {
+  @apply text-inherit;
+}
+
+.prose-docs hr {
+  @apply my-12 border-line-soft;
+}
+
+.prose-docs blockquote {
+  @apply border-l-2 border-brand pl-4 text-faint;
+}
+
+.prose-docs table {
+  @apply my-6 w-full border-collapse text-[0.9375rem];
+}
+
+.prose-docs .table-wrap {
+  @apply my-6 overflow-x-auto rounded-lg border border-line;
+}
+
+.prose-docs .table-wrap table {
+  @apply my-0;
+}
+
+.prose-docs th {
+  @apply border-b border-line bg-surface px-4 py-2.5 text-left font-medium text-foreground;
+}
+
+.prose-docs td {
+  @apply border-b border-line-soft px-4 py-2.5 align-top;
+}
+
+.prose-docs tr:last-child td {
+  @apply border-b-0;
+}
+
+/* ---------- Code blocks (rehype-pretty-code) ---------- */
+
+.code-block {
+  @apply relative my-6 overflow-hidden rounded-lg border border-line bg-surface;
+}
+
+.code-block pre {
+  @apply overflow-x-auto py-4 font-mono text-[0.875rem] leading-[1.7];
+}
+
+.code-block pre > code {
+  @apply grid min-w-full;
+}
+
+.code-block [data-line] {
+  @apply px-5;
+}
+
+[data-rehype-pretty-code-figure] {
+  margin: 0;
+}
+
+[data-rehype-pretty-code-title] {
+  @apply border-b border-line px-5 py-2 font-mono text-xs text-faint;
+}
+
+code[data-theme*=" "] span {
+  color: var(--shiki-light);
+}
+
+.dark code[data-theme*=" "] span {
+  color: var(--shiki-dark);
+}

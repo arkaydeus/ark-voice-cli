@@ -1,0 +1,70 @@
+`ark-voice stt` (alias `transcribe`) turns a recording into text with the model already on your
+Mac.
+
+## Transcribe a file
+
+```sh
+ark-voice stt recording.wav
+ark-voice stt voice-note.m4a --output transcript.txt
+ark-voice stt interview.mp4 -o interview.txt
+```
+
+Input can be WAV, AAC, M4A or MP4. Decoding uses AVFoundation, and MP4 files must contain an audio
+track. Without `--output`, the transcript is written to stdout.
+
+## Print text as it is recognized
+
+```sh
+ark-voice stt long-meeting.m4a --stream
+```
+
+With `--stream` and no `--output`, partial text goes to stdout as it arrives. With `--stream` and
+`--output`, partial text goes to stderr, and the final transcript is installed atomically at the
+requested path, so the file never holds a half-written transcript.
+
+Parakeet Ultra produces its text only once the whole input is done, so `--stream` with that model
+prints everything at the end.
+
+## Read audio from stdin
+
+Pass `-` as the input. Container audio (WAV, M4A and so on) is detected from its leading bytes:
+
+```sh
+cat recording.wav | ark-voice stt -
+```
+
+Headerless PCM needs `--input-format`, and `--input-rate` if it is not 16 kHz:
+
+```sh
+ark-voice stt - --input-format s16le --input-rate 24000 < raw.pcm
+```
+
+`--input-format` takes `f32le` or `s16le`, and applies only when reading from stdin.
+
+## Choose a recognizer
+
+```sh
+ark-voice download parakeet-ultra
+ark-voice stt interview.m4a --model parakeet-ultra
+ark-voice stt podcast.m4a -m qwen --stream
+```
+
+Parakeet v2 is the default. See [Choosing a recognizer](/docs/recognizers) for languages, memory
+and speed.
+
+## Options
+
+| Option                  | Meaning                                                |
+| ----------------------- | ------------------------------------------------------ |
+| `<audio>` or `-`        | Input file, or `-` for stdin                           |
+| `-o`, `--output <path>` | Write the transcript to a file instead of stdout       |
+| `--stream`              | Print partial text as it is recognized                 |
+| `-m`, `--model <name>`  | `parakeet` (default), `parakeet-ultra` or `qwen`       |
+| `--input-format <fmt>`  | Headerless PCM on stdin: `f32le` or `s16le`            |
+| `--input-rate <hz>`     | Sample rate of headerless PCM on stdin (default 16000) |
+
+## Live microphone input
+
+Live microphone transcription is not supported. The recognizer needs the whole recording before it
+starts. The server protocol leaves room for a `stt-live` operation to be added later without
+breaking clients.

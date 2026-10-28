@@ -1,0 +1,47 @@
+These are measurements recorded during development, not a guarantee for your machine. Each table
+says what it was measured on.
+
+## Resident models versus a process per call
+
+Measured on an M-series Mac with the weights already in the page cache, synthesizing one short
+utterance:
+
+|                                          | Time    |
+| ---------------------------------------- | ------- |
+| `ark-voice tts` (process per call)       | ~5.9 s  |
+| `ark-voice client tts` (resident models) | ~0.24 s |
+
+Almost all of the per-call time is loading roughly a gigabyte of weights. If you call ark-voice
+more than occasionally, [run the server](/docs/server).
+
+## Recognition speed and accuracy
+
+Measured on an M5 Max against LibriSpeech read English, 32 minutes of audio:
+
+| Model            | Speed                | Word error rate |
+| ---------------- | -------------------- | --------------- |
+| `parakeet-ultra` | about 175× real time | 4.2%            |
+| `qwen`           | about 50× real time  | 3.8%            |
+
+## Memory and download size
+
+Peak memory transcribing 8 minutes of audio:
+
+| Model                | Runtime                | Download | Peak memory |
+| -------------------- | ---------------------- | -------- | ----------- |
+| `parakeet` (default) | MLX, GPU               | 0.7 GB   | ~1.2 GB     |
+| `parakeet-ultra`     | Core ML, Neural Engine | 0.6 GB   | ~0.1 GB     |
+| `qwen`               | MLX, GPU               | 2.5 GB   | ~4.5 GB     |
+
+## First-use costs
+
+- Parakeet Ultra is compiled for the Neural Engine before first use, which takes about ten seconds.
+  `ark-voice download parakeet-ultra` does it ahead of time.
+- The first request to each side of a session or server loads that model. Later requests pay only
+  for inference until the models are unloaded, by default after 300 idle seconds on the server.
+
+## Streaming latency
+
+With `--output -`, synthesis writes each chunk as soon as it is generated. Long text is split into
+chunks of at most 300 characters, so playback can start after the first chunk instead of after the
+whole document.
