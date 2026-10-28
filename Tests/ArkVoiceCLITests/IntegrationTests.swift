@@ -156,8 +156,10 @@ import Testing
     #expect(transcription.status == 0)
 
     // Recognition is not exact, so compare the words that carry the meaning.
+    // "Daemon" and "demon" sound the same; audio cannot say which was meant.
     let heard = transcription.standardOutput.lowercased()
-    for word in ["daemon", "models", "memory"] {
+    #expect(heard.contains("daemon") || heard.contains("demon"))
+    for word in ["models", "memory"] {
       #expect(heard.contains(word))
     }
 

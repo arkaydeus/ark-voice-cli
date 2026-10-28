@@ -92,7 +92,14 @@ import Testing
     #expect(TranscriptionModel.qwen.usesMLX)
   }
 
-  @Test func qwenCacheLimitIsRestoredAcrossSessions() async throws {
+  // Reading MLX's cache limit initializes the Metal device, which aborts the
+  // whole test process when mlx.metallib is not packaged beside it.
+  @Test(
+    .enabled(
+      if: ProcessInfo.processInfo.environment["ARK_VOICE_TEST_MLX"] == "1",
+      "Set ARK_VOICE_TEST_MLX=1 and package mlx.metallib to test MLX cache limits."
+    ))
+  func qwenCacheLimitIsRestoredAcrossSessions() async throws {
     let original = Memory.cacheLimit
     let entered = AsyncStream.makeStream(of: Void.self)
     let release = AsyncStream.makeStream(of: Void.self)
