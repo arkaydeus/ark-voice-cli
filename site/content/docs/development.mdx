@@ -15,9 +15,14 @@ runtime is only packaged for release builds. The tests still pass.
 
 ### Opt-in suites
 
-Tests that need MLX or downloaded models are opt-in:
+Tests that need MLX or downloaded models are opt-in. From the repository root, build the release
+runtime and copy it beside the debug test executable before enabling the MLX tests (run `swift test`
+first to create the debug test bundle):
 
 ```sh
+./Scripts/build-release.sh
+cp .build/release/mlx.metallib \
+  .build/debug/ark-voice-cliPackageTests.xctest/Contents/MacOS/
 ARK_VOICE_TEST_MLX=1 swift test
 
 ARK_VOICE_INTEGRATION_BINARY=.build/release/ark-voice \
@@ -33,17 +38,22 @@ loaded.
 
 Each binding checks the shared byte vectors in `bindings/test-vectors/protocol.json`, runs against
 a scripted fake server, and has an integration suite that starts a real `ark-voice serve` when one
-is built (`$ARK_VOICE_BINARY`, else `.build/release/ark-voice`).
+is built (`$ARK_VOICE_BINARY`, else `.build/release/ark-voice`). Run these commands from the
+repository root; each binding runs in a subshell so the working directory is restored afterward.
 
 ```sh
 swift test --filter ArkVoiceClientTests
 
-cd bindings/typescript
-bun install && bun run typecheck && bun run test
+(
+  cd bindings/typescript || exit
+  bun install && bun run typecheck && bun run test
+)
 
-cd bindings/python
-uv venv .venv && uv pip install --python .venv/bin/python -e '.[test]'
-.venv/bin/python -m pytest
+(
+  cd bindings/python || exit
+  uv venv .venv && uv pip install --python .venv/bin/python -e '.[test]' && \
+    .venv/bin/python -m pytest
+)
 ```
 
 Any change to the protocol must update the vectors and all three clients together.
@@ -59,7 +69,8 @@ mise install            # installs the pinned Bun
 mise run site:install   # bun install
 mise run site:dev       # http://localhost:3000
 mise run site:fmt       # bun fmt
-mise run site:check     # bun fmt --check and bun check (type check)
+mise run site:check     # bun fmt --check, next typegen, bun check
+mise run site:test      # loader, heading, search and clipboard tests
 mise run site:build     # production build
 ```
 

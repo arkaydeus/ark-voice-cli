@@ -2,11 +2,13 @@ import "server-only";
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import GithubSlugger from "github-slugger";
+import { parseHeadings } from "@/lib/headings";
+import type { Heading } from "@/lib/headings";
+
+export type { Heading } from "@/lib/headings";
 
 export type DocMeta = { slug: string; title: string; description: string };
 export type DocSection = { title: string; pages: DocMeta[] };
-export type Heading = { id: string; text: string; depth: 2 | 3 };
 export type SearchEntry = DocMeta & { section: string; headings: Heading[] };
 
 /** Sidebar order. Each slug has a matching `content/docs/<slug>.mdx`. */
@@ -163,32 +165,14 @@ export function getDoc(slug: string) {
 }
 
 /**
- * Reads `##` and `###` headings from an MDX file, skipping code fences, and
- * slugs them the same way rehype-slug does so the ids match the rendered page.
+ * Reads level 2 and 3 headings from a known MDX page using the renderer's parser
+ * and slugging rules. Unknown pages have no headings.
  */
 export function getHeadings(slug: string): Heading[] {
-  const source = readFileSync(path.join(contentDir, `${slug}.mdx`), "utf8");
-  const slugger = new GithubSlugger();
-  const headings: Heading[] = [];
-  let inFence = false;
-
-  for (const line of source.split("\n")) {
-    if (/^\s*(```|~~~)/.test(line)) {
-      inFence = !inFence;
-      continue;
-    }
-    if (inFence) continue;
-    const match = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
-    if (!match) continue;
-    const text = match[2]
-      .replace(/`([^`]+)`/g, "$1")
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-      .replace(/[*_]/g, "");
-    const id = slugger.slug(text);
-    const depth = match[1].length;
-    if (depth === 2 || depth === 3) headings.push({ id, text, depth });
-  }
-  return headings;
+  if (!getDoc(slug)) return [];
+  return parseHeadings(
+    readFileSync(path.join(contentDir, `${slug}.mdx`), "utf8"),
+  );
 }
 
 export function getSearchIndex(): SearchEntry[] {

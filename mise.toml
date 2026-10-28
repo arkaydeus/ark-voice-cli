@@ -28,6 +28,11 @@ description = "Format the site with bun fmt"
 dir = "{{config_root}}/site"
 run = "bun fmt"
 
+[tasks."site:test"]
+description = "Test docs loaders and interactive components"
+dir = "{{config_root}}/site"
+run = "bun run test"
+
 [tasks."site:check"]
 description = "Check formatting and types"
 dir = "{{config_root}}/site"

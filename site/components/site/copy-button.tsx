@@ -13,40 +13,66 @@ type CopyButtonProps = {
 
 export function CopyButton({ value, label, className }: CopyButtonProps) {
   const ref = useRef<HTMLButtonElement>(null);
-  const [copied, setCopied] = useState(false);
+  const [status, setStatus] = useState<"idle" | "copied" | "error">("idle");
 
   useEffect(() => {
-    if (!copied) return;
-    const timer = setTimeout(() => setCopied(false), 1600);
+    if (status !== "copied") return;
+    const timer = setTimeout(() => setStatus("idle"), 1600);
     return () => clearTimeout(timer);
-  }, [copied]);
+  }, [status]);
 
   async function copy() {
     const text =
       value ??
       ref.current?.closest(".code-block")?.querySelector("pre")?.textContent ??
       "";
-    await navigator.clipboard.writeText(text.trimEnd());
-    setCopied(true);
+    try {
+      if (!navigator.clipboard?.writeText) {
+        setStatus("error");
+        return;
+      }
+      await navigator.clipboard.writeText(text.trimEnd());
+      setStatus("copied");
+    } catch {
+      setStatus("error");
+    }
   }
 
+  const copied = status === "copied";
+  const failed = status === "error";
+
   return (
-    <button
-      ref={ref}
-      type="button"
-      onClick={copy}
-      aria-label={copied ? "Copied" : "Copy to clipboard"}
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-md border border-line bg-background px-2 py-1 font-mono text-xs text-faint transition-colors hover:text-foreground",
-        className,
-      )}
-    >
-      {copied ? (
-        <CheckIcon className="size-3.5 text-good" />
-      ) : (
-        <CopyIcon className="size-3.5" />
-      )}
-      {label && (copied ? "Copied" : "Copy")}
-    </button>
+    <>
+      <button
+        ref={ref}
+        type="button"
+        onClick={copy}
+        aria-label={
+          failed
+            ? "Copy failed. Try again"
+            : copied
+              ? "Copied"
+              : "Copy to clipboard"
+        }
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded-md border border-line bg-background px-2 py-1 font-mono text-xs text-faint transition-colors hover:text-foreground",
+          className,
+        )}
+      >
+        {copied ? (
+          <CheckIcon className="size-3.5 text-good" />
+        ) : (
+          <CopyIcon className="size-3.5" />
+        )}
+        {failed ? "Copy failed" : label && (copied ? "Copied" : "Copy")}
+      </button>
+      <span role="status" className="sr-only">
+        {failed
+          ? "Copy failed. Select the text to copy manually, or try again."
+          : copied
+            ? "Copied to clipboard."
+            : ""}
+      </span>
+    </>
   );
 }

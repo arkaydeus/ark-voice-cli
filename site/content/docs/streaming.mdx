@@ -23,8 +23,9 @@ Add `--raw` to drop the WAV header, and choose the sample encoding with `--forma
 | `f32le`    | 32-bit float, little-endian (the default)                             |
 | `s16le`    | 16-bit signed integer, little-endian: half the bytes, no audible loss |
 
-Synthesis is always 24 kHz mono. `--raw` and `--format` apply only with `--output -`; files always
-hold float samples.
+Synthesis is always 24 kHz mono. `--raw` and `--format` apply only with `--output -`. File encoding
+follows the output extension: WAV holds float samples, while M4A and AAC use AAC encoding. See the
+[output formats table](/docs/synthesis#output-formats).
 
 ## Audio from stdin
 

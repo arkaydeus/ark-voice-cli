@@ -11,6 +11,7 @@ mise run site:install   # bun install
 mise run site:dev       # dev server on http://localhost:3000
 mise run site:fmt       # bun fmt
 mise run site:check     # bun fmt --check, next typegen, bun check
+mise run site:test      # loader, heading, search and clipboard tests
 mise run site:build     # production build
 ```
 
@@ -27,3 +28,9 @@ To add a page, add an entry to `docsNav` in `lib/docs.ts` and create the matchin
 
 `bunfig.toml` selects Bun's hoisted linker, because Turbopack cannot resolve peer dependencies
 through the isolated `node_modules/.bun` layout.
+
+Run tests from `site/` with `bun run test`, or from anywhere in the repository with
+`mise run site:test`. Tests use Bun's per-file isolation and Happy DOM. Only the Next.js router
+and the `server-only` boundary marker are mocked; search uses the real command and dialog
+components. Heading tests compare against compiled, rendered MDX, and check every docs page's
+navigation entry, search headings, and internal links.
