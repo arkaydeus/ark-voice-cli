@@ -24,7 +24,8 @@ let package = Package(
     ),
     .package(
       url: "https://github.com/huggingface/swift-huggingface.git",
-      exact: "0.8.1"
+      exact: "0.9.0",
+      traits: []
     ),
     .package(
       url: "https://github.com/ml-explore/mlx-swift.git",

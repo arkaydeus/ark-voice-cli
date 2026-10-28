@@ -1,0 +1,123 @@
+[
+  {
+    "identity": "eventsource",
+    "revision": "86b5096ac59ab46e66bd1f6377c604bc1dab0bc2",
+    "version": "1.5.1",
+    "license": "MIT",
+    "license_file": "LICENSE.md",
+    "license_sha256": "2f9b695627d569a3ce452b2c03fdd34310df78c8ea94edfafd9ce38381e5b502"
+  },
+  {
+    "identity": "fluidaudio",
+    "revision": "a6b826ce9a09028fc685a4b32a8927ec920c3188",
+    "version": "0.17.3",
+    "license": "Apache-2.0",
+    "license_file": "LICENSE",
+    "license_sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+  },
+  {
+    "identity": "mlx-swift",
+    "revision": "0bb916c67f4b9e5c682cbe02a42c701c93ab5021",
+    "version": "0.31.6",
+    "license": "MIT",
+    "license_file": "LICENSE",
+    "license_sha256": "44326a4ea062241ae6fc26ee2ec90bdc81af7eb7b9d3966181b733fa69d42057"
+  },
+  {
+    "identity": "mlx-swift-lm",
+    "revision": "bd4b7434e6bdb588c7ef55706ff8904cb7fd4c57",
+    "version": "3.31.4",
+    "license": "MIT",
+    "license_file": "LICENSE",
+    "license_sha256": "7b1d86acac816ce8192209d7e01141c129b4d48d474c15cc5fb4af62f497c323"
+  },
+  {
+    "identity": "swift-argument-parser",
+    "revision": "6a52f3251125d74daf04fcbd5e6f08a75d074382",
+    "version": "1.8.2",
+    "license": "Apache-2.0 WITH Swift-exception",
+    "license_file": "LICENSE.txt",
+    "license_sha256": "770af8291f708538d8ff885a0bbc4e045cd700531741c4f99528d435c14d7f55"
+  },
+  {
+    "identity": "swift-asn1",
+    "revision": "d9a5b37470adc940d22c3bcd5ca6953a516b727f",
+    "version": "1.7.2",
+    "license": "Apache-2.0 WITH Swift-exception",
+    "license_file": "LICENSE.txt",
+    "license_sha256": "8c6db340475136df3c1201d458fa5755698eace76e510471ecc9d857d6083dac"
+  },
+  {
+    "identity": "swift-collections",
+    "revision": "a0cb0954ecb21e4e31b0070e6ed5674e8556685a",
+    "version": "1.6.0",
+    "license": "Apache-2.0 WITH Swift-exception",
+    "license_file": "LICENSE.txt",
+    "license_sha256": "770af8291f708538d8ff885a0bbc4e045cd700531741c4f99528d435c14d7f55"
+  },
+  {
+    "identity": "swift-crypto",
+    "revision": "da9d28d69ebe3894b18376c8f2395c2f37b8448f",
+    "version": "4.5.2",
+    "license": "Apache-2.0",
+    "license_file": "LICENSE.txt",
+    "license_sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+  },
+  {
+    "identity": "swift-huggingface",
+    "revision": "b721959445b617d0bf03910b2b4aced345fd93bf",
+    "version": "0.9.0",
+    "license": "Apache-2.0",
+    "license_file": "LICENSE",
+    "license_sha256": "4d6ad72952a8329063a71de28329b493de96cf57459e2ac217110d1a6a5f84ae"
+  },
+  {
+    "identity": "swift-jinja",
+    "revision": "7d0b8880ef8e567dd4e0089f8b99fb354129017c",
+    "version": "2.4.2",
+    "license": "Apache-2.0",
+    "license_file": "LICENSE",
+    "license_sha256": "648b81e6c6f9975c3b6cf6d630229b6c8d6f1ddaef55f5770f576adda19f3495"
+  },
+  {
+    "identity": "swift-numerics",
+    "revision": "0c0290ff6b24942dadb83a929ffaaa1481df04a2",
+    "version": "1.1.1",
+    "license": "Apache-2.0 WITH Swift-exception",
+    "license_file": "LICENSE.txt",
+    "license_sha256": "770af8291f708538d8ff885a0bbc4e045cd700531741c4f99528d435c14d7f55"
+  },
+  {
+    "identity": "swift-syntax",
+    "revision": "4799286537280063c85a32f09884cfbca301b1a1",
+    "version": "602.0.0",
+    "license": "Apache-2.0 WITH Swift-exception",
+    "license_file": "LICENSE.txt",
+    "license_sha256": "770af8291f708538d8ff885a0bbc4e045cd700531741c4f99528d435c14d7f55",
+    "prebuilt_macro": true
+  },
+  {
+    "identity": "swift-testing",
+    "revision": "5ee435b15ad40ec1f644b5eb9d247f263ccd2170",
+    "version": "6.2.4",
+    "license": "Apache-2.0 WITH Swift-exception",
+    "license_file": "LICENSE.txt",
+    "license_sha256": "11875c32f8de06e40b25b9e1dc78776baad9810032601c5325db6234c86d71e9"
+  },
+  {
+    "identity": "swift-transformers",
+    "revision": "58c4bc11963a140358d791f678a60a2745a23146",
+    "version": "1.2.1",
+    "license": "Apache-2.0",
+    "license_file": "LICENSE",
+    "license_sha256": "648b81e6c6f9975c3b6cf6d630229b6c8d6f1ddaef55f5770f576adda19f3495"
+  },
+  {
+    "identity": "yyjson",
+    "revision": "8b4a38dc994a110abaec8a400615567bd996105f",
+    "version": "0.12.0",
+    "license": "MIT",
+    "license_file": "LICENSE",
+    "license_sha256": "45e384d3d52c73cba3a64d6e6c25d47cd738cd8a55c30629e3201046eda62947"
+  }
+]

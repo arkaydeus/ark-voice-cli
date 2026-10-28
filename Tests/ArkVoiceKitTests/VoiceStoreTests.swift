@@ -58,7 +58,15 @@ import ArkVoiceKit
     }
   }
 
-  @Test func missingProfilesAreRejected() throws {
+  // The default `stream: .cpu` argument creates an MLX stream, which loads the
+  // Metal runtime before the missing file is noticed.
+  @Test(
+    .enabled(
+      if: ProcessInfo.processInfo.environment["ARK_VOICE_TEST_MLX"] == "1",
+      "Set ARK_VOICE_TEST_MLX=1 and package mlx.metallib to test safetensors I/O."
+    )
+  )
+  func missingProfilesAreRejected() throws {
     let directory = temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     #expect(throws: VoiceStoreError.self) {

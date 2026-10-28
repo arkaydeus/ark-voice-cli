@@ -27,3 +27,9 @@ previous workaround redirected `STDOUT_FILENO` with `dup2` for the duration of g
 is process-global and therefore unsafe once more than one request runs at a time.
 
 Two Chatterbox files (`T3/T3Model.swift`, `T3/T3GPT2Model.swift`) gained `import MLXAudioCore`.
+
+## Local patch: HTTP-only Hub downloads
+
+The manifest requires swift-huggingface 0.9.0 with no traits, so its optional Xet
+transport is not linked. Downloads use the Apache-2.0 licensed HTTP implementation;
+the unlicensed swift-xet 0.2.3 source is excluded from the executable.

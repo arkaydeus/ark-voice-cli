@@ -26,6 +26,33 @@ Downloads are pinned to reviewed Hugging Face commit revisions. Required files a
 - Xcode Command Line Tools
 - Internet access for the one-time model download
 
+## Install a release
+
+Each release is a zip, signed with a Developer ID certificate and notarized by Apple. Download
+`ark-voice-<version>-macos-arm64.zip` and its `.sha256` file, then check and unpack it:
+
+```sh
+shasum -a 256 -c ark-voice-0.2.0-macos-arm64.zip.sha256
+ditto -x -k ark-voice-0.2.0-macos-arm64.zip .
+```
+
+The folder holds `ark-voice`, `mlx.metallib`, `libswiftCompatibilitySpan.dylib` and
+`THIRD_PARTY_NOTICES.md`. Keep the first three in one directory: the executable loads MLX's Metal
+runtime and, on macOS 14 and 15, the Swift compatibility library from beside itself. For a
+system-wide install:
+
+```sh
+cd ark-voice-0.2.0-macos-arm64
+sudo install -d /usr/local/libexec/ark-voice /usr/local/bin
+sudo install -m 755 ark-voice libswiftCompatibilitySpan.dylib /usr/local/libexec/ark-voice/
+sudo install -m 644 mlx.metallib /usr/local/libexec/ark-voice/
+sudo ln -sfn /usr/local/libexec/ark-voice/ark-voice /usr/local/bin/ark-voice
+ark-voice --version
+```
+
+A command-line binary cannot carry a stapled notarization ticket, so the first run of a downloaded
+copy asks Apple's servers for it. That first run needs a network connection; later runs do not.
+
 ## Build
 
 ```sh
@@ -333,34 +360,109 @@ call `stream.cancel()` to stop an unused or manually retained iterator.
 
 ## Tests
 
-Run the model-independent test suite with:
+`./Scripts/ci.sh` is the local CI, and the check to run before a release. It runs, stopping at the
+first failure:
+
+1. the release build
+2. the unit tests, with `mlx.metallib` packaged so the MLX tests run too
+3. the CLI integration tests, against the release binary
+4. the Parakeet Ultra and Qwen3-ASR recognizer tests
+
+Steps 3 and 4 run when their models are installed under `~/.ark-voice-cli` and are reported as
+skipped otherwise: step 3 needs the default models from `ark-voice download`, and step 4 also needs
+`parakeet-ultra` and `qwen`. The STT tests transcribe `ARK_VOICE_INTEGRATION_STT_AUDIO` if it is set,
+and otherwise a clip that CI synthesizes first. For custom audio, also set
+`ARK_VOICE_INTEGRATION_STT_WORDS` to space-separated words spoken in the clip; each
+word must appear in the transcript. The run ends with a pass/fail summary, and each test
+log is kept under `.build/ci/`.
+
+The pieces can also be run by hand. The model-independent suite needs nothing else:
 
 ```sh
 swift test
 ```
 
 That covers argument parsing, chunking, audio encoding and decoding, the wire protocol, and the
-server end to end over a real socket — the server tests need no models, because a session pointed at
+server end to end over a real socket. The server tests need no models, because a session pointed at
 an empty model root answers with errors rather than loading weights.
 
-A debug test run ends with MLX complaining `Failed to load the default metallib`, because the Metal
-runtime is only packaged for release builds. The tests still pass. Put the runtime beside the test
-binary to silence it and to run the opt-in safetensors tests:
+Tests that touch MLX are opt-in, because MLX aborts the test process when it cannot find its Metal
+runtime. To run them, build the tests, put the runtime beside each test binary, and run without
+rebuilding:
 
 ```sh
 ./Scripts/build-release.sh
-cp .build/release/mlx.metallib \
-  .build/debug/ark-voice-cliPackageTests.xctest/Contents/MacOS/
-ARK_VOICE_TEST_MLX=1 swift test
+swift build --build-tests
+for bundle in "$(swift build --show-bin-path)"/*.xctest; do
+  cp .build/release/mlx.metallib "$bundle/Contents/MacOS/"
+done
+ARK_VOICE_TEST_MLX=1 swift test --skip-build
 ```
 
-Model-backed integration tests are opt-in because they require downloaded models and the packaged Metal runtime:
+Delete those copies before the next build. `Contents/MacOS` is meant for code, and the build fails
+when it re-signs a test bundle that holds a metallib there. `ci.sh` removes them itself.
+
+The model-backed integration tests use the release binary:
 
 ```sh
 ARK_VOICE_INTEGRATION_BINARY=.build/release/ark-voice \
   ARK_VOICE_INTEGRATION_STT_AUDIO=/path/to/sample.wav \
-  swift test
+  ARK_VOICE_INTEGRATION_STT_WORDS="words spoken in sample" \
+  swift test --skip-build --filter IntegrationTests
 ```
 
 Those cover writing a file, streaming a WAV to stdout, and a full round trip through the daemon:
-synthesize a sentence, transcribe the result, and confirm the models stayed loaded.
+synthesize a sentence, transcribe the result, and confirm the models stayed loaded. With
+`ARK_VOICE_TEST_MODELS=1`, `ARK_VOICE_INTEGRATION_STT_AUDIO=/path/to/sample.wav`, and
+the metallib packaged as above, the recognizer and server suites also
+load Parakeet Ultra and Qwen3-ASR. Recognizer transcription tests skip when the audio
+variable is missing or empty.
+
+Run `python3 Scripts/test-release-workflows.py` on macOS for isolated release failure
+and CI branch checks. These use command fixtures for signing, notarization, and models,
+and real `ditto`/`unzip` to verify archive contents.
+
+## Cutting a release
+
+Releases are built, signed and notarized on a Mac that holds the Developer ID certificate, not on a
+hosted CI service.
+
+1. Set `arkVoiceVersion` in `Sources/ArkVoiceCLI/App.swift`, the single source of the version, and
+   add the release to `CHANGELOG.md`. Commit both.
+2. Run `./Scripts/ci.sh`.
+3. Run `./Scripts/package-release.sh`.
+
+The packaging script refuses to run on a dirty working tree. Release builds audit the
+resolved dependencies against `Docs/release-dependencies.json` (exact pins and license
+hashes); changes require reviewing the source license and updating that inventory and
+`THIRD_PARTY_NOTICES.md`. swift-huggingface uses HTTP downloads with its optional Xet
+trait disabled, excluding swift-xet from the resolved graph. It builds the release, then signs
+`ark-voice` and `libswiftCompatibilitySpan.dylib` with the hardened runtime and a secure timestamp.
+It runs the signed binary from a directory holding only the release files: `tts` to WAV and M4A,
+`stt` from a file and from stdin with every installed recognizer, and a `serve`/`client` round trip.
+It zips the files in a temporary directory with `ditto`, submits the zip with `notarytool`,
+waits for the result, then
+verifies a quarantined copy of the zip's contents with `codesign --verify --strict` and
+`spctl --assess --type install`. (`spctl --type execute` only accepts app bundles and rejects any
+bare executable.) Only after verification and checksum generation does it move the
+archive and checksum into `dist`; a failed attempt preserves any existing verified
+release. The result is:
+
+```text
+dist/ark-voice-<version>-macos-arm64.zip
+dist/ark-voice-<version>-macos-arm64.zip.sha256
+```
+
+It needs:
+
+- the `Developer ID Application` identity in the login keychain (`ARK_VOICE_SIGNING_IDENTITY`
+  overrides which identity is used)
+- the `orkestrator-notary` notarytool keychain profile (`ARK_VOICE_NOTARY_PROFILE` overrides it)
+- an unlocked login keychain. Over SSH, unlock it in the same session that runs the script.
+- the default models, for the smoke test
+
+`mlx.metallib` is not signed. It is GPU code that Metal reads as data, not Mach-O, so dyld's library
+validation never sees it and notarization does not check it. Neither the zip nor the bare executable
+can hold a stapled ticket, so Gatekeeper checks the notarization online on first run.
+
+Tagging the commit and publishing the zip are left to you.

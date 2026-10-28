@@ -92,7 +92,14 @@ import Testing
     #expect(TranscriptionModel.qwen.usesMLX)
   }
 
-  @Test func qwenCacheLimitIsRestoredAcrossSessions() async throws {
+  // Reading MLX's cache limit initializes the Metal device, which aborts the
+  // whole test process when mlx.metallib is not packaged beside it.
+  @Test(
+    .enabled(
+      if: ProcessInfo.processInfo.environment["ARK_VOICE_TEST_MLX"] == "1",
+      "Set ARK_VOICE_TEST_MLX=1 and package mlx.metallib to test MLX cache limits."
+    ))
+  func qwenCacheLimitIsRestoredAcrossSessions() async throws {
     let original = Memory.cacheLimit
     let entered = AsyncStream.makeStream(of: Void.self)
     let release = AsyncStream.makeStream(of: Void.self)
@@ -115,7 +122,11 @@ import Testing
     #expect(Memory.cacheLimit == original)
   }
 
-  @Test(.enabled(if: ProcessInfo.processInfo.environment["ARK_VOICE_TEST_MODELS"] == "1"))
+  @Test(.enabled(
+    if: ProcessInfo.processInfo.environment["ARK_VOICE_TEST_MODELS"] == "1"
+      && ProcessInfo.processInfo.environment["ARK_VOICE_INTEGRATION_STT_AUDIO"]?.isEmpty == false,
+    "Set ARK_VOICE_TEST_MODELS=1 and ARK_VOICE_INTEGRATION_STT_AUDIO to test recognizers."
+  ))
   func ultraLoadsAndTranscribesWithResidentStatus() async throws {
     let audio = try integrationAudio()
     let session = VoiceSession()
@@ -130,7 +141,11 @@ import Testing
     #expect(events.finished == 1)
   }
 
-  @Test(.enabled(if: ProcessInfo.processInfo.environment["ARK_VOICE_TEST_MODELS"] == "1"))
+  @Test(.enabled(
+    if: ProcessInfo.processInfo.environment["ARK_VOICE_TEST_MODELS"] == "1"
+      && ProcessInfo.processInfo.environment["ARK_VOICE_INTEGRATION_STT_AUDIO"]?.isEmpty == false,
+    "Set ARK_VOICE_TEST_MODELS=1 and ARK_VOICE_INTEGRATION_STT_AUDIO to test recognizers."
+  ))
   func qwenLoadsAndStreamsTheFinalTranscript() async throws {
     let audio = try integrationAudio()
     _ = try await assertQwenStream(audio)
