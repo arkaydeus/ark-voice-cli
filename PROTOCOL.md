@@ -43,6 +43,8 @@ runs model work one request at a time.
 
 Request id `0` is reserved for connection-level protocol errors. Clients must
 surface an `error` event on id `0` even while waiting for another request id.
+The server closes the connection after sending one, so it ends every request
+still in flight.
 
 ## Sample formats
 
@@ -119,11 +121,19 @@ first, or uses `ark-voice stt <file>` for a one-shot transcription.
 | Request                | Response                                                            |
 | ---------------------- | ------------------------------------------------------------------- |
 | `{"op": "voices"}`     | `{"event": "voices", "names": [...]}`                               |
-| `{"op": "status"}`     | `{"event": "status", "synthesisModelLoaded": true, "transcriptionModel": "qwen", ...}` |
+| `{"op": "status"}`     | `{"event": "status", "version": 1, "synthesisModelLoaded": true, "transcriptionModelLoaded": true, "transcriptionModel": "qwen", "requestsServed": 4, "uptimeSeconds": 12.5}` |
 | `{"op": "unload"}`     | `{"event": "done"}` — releases resident models                      |
 | `{"op": "cancel"}`     | the addressed request ends with `{"event": "error", "code": "cancelled"}` |
 
 `cancel` is addressed by the request id in its frame header, not by a field.
+
+A cancel can cross the request's own reply. A request that finishes before the
+server reads the cancel ends normally, with `done`. The cancel then has nothing
+to stop and is answered with `unknown-request` on that id, after the reply.
+`hello`, `voices` and `status` are answered at once, so cancelling them always
+does this. A client that cancels should treat the request's normal final event,
+or any `error`, as its end, and should ignore frames for ids that have already
+ended.
 
 ## Errors
 
