@@ -45,7 +45,7 @@ if [[ ! -f "$framework_archive" ]]; then
   trap - EXIT
 fi
 
-extraction_directory="$(mktemp -d /tmp/ark-voice-cmlx.XXXXXX)"
+extraction_directory="$(mktemp -d "${TMPDIR:-/tmp}/ark-voice-cmlx.XXXXXX")"
 cleanup() {
   rm -rf "$extraction_directory"
 }
