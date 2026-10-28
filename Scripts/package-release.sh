@@ -187,7 +187,10 @@ echo
 echo "==> Zip"
 mkdir -p "$dist_directory"
 rm -f "$zip_path" "$checksum_path"
-ditto -c -k --keepParent "$stage" "$zip_path"
+# Extended attributes (such as com.apple.provenance) would otherwise be stored
+# as AppleDouble ._ files that `unzip` leaves beside each file. The signatures
+# are embedded in the Mach-O files and do not need them.
+ditto -c -k --norsrc --noextattr --noacl --keepParent "$stage" "$zip_path"
 
 echo
 echo "==> Notarize"
