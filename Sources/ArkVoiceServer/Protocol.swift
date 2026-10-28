@@ -1,34 +1,14 @@
+@_exported import ArkVoiceClient
 import ArkVoiceKit
 import Foundation
 
-/// Protocol revision carried in the handshake.
-///
-/// A client sends `hello` first; a server that does not recognise the version
-/// says so rather than guessing at the frames that follow.
-public let arkVoiceProtocolVersion = 1
+// The framing, protocol version, and operation, event, and error names live in
+// ArkVoiceClient so the server and its lightweight client share one definition.
+// They are re-exported so `import ArkVoiceServer` still sees them.
 
 /// Default socket path, beside the models the daemon serves.
 public func defaultSocketPath(modelRoot: URL = ModelStore.defaultRoot) -> String {
   modelRoot.appendingPathComponent("ark-voice.sock").path
-}
-
-/// What a client is asking for.
-public enum ClientOperation: String, Codable, Sendable {
-  case hello
-  /// Synthesize `text`; the server answers with `audio-format`, PCM frames, `done`.
-  case tts
-  /// Begin transcription; PCM frames follow on the same request until `end`.
-  case stt
-  /// Begin a voice profile; reference PCM frames follow until `end`.
-  case createVoice = "create-voice"
-  /// No more audio for this request.
-  case end
-  case voices
-  case status
-  /// Release resident models now.
-  case unload
-  /// Abandon the request this frame is addressed to.
-  case cancel
 }
 
 /// A control message from client to server.
@@ -72,29 +52,6 @@ public struct ClientMessage: Codable, Sendable {
     self.sampleRate = sampleRate
     self.model = model
   }
-}
-
-public enum ServerEvent: String, Codable, Sendable {
-  case helloOK = "hello-ok"
-  /// Describes the PCM frames that follow for this request.
-  case audioFormat = "audio-format"
-  case partial
-  case final
-  case voices
-  case status
-  case voiceCreated = "voice-created"
-  /// The request finished successfully.
-  case done
-  case error
-}
-
-public enum ServerErrorCode: String, Codable, Sendable {
-  case badRequest = "bad-request"
-  case unsupportedVersion = "unsupported-version"
-  case modelsMissing = "models-missing"
-  case cancelled
-  case unknownRequest = "unknown-request"
-  case failed
 }
 
 /// A control message from server to client.
