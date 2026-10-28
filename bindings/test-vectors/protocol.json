@@ -1,0 +1,358 @@
+{
+  "description": "Shared byte vectors for ark-voice protocol clients. JSON payloads are compact, keys sorted, absent fields omitted, non-ASCII written as raw UTF-8 and '/' unescaped. Every binding must produce these exact bytes.",
+  "protocolVersion": 1,
+  "headerSize": 12,
+  "maximumPayloadSize": 67108864,
+  "requests": [
+    {
+      "name": "hello, request 1 (the PROTOCOL.md example)",
+      "requestId": 1,
+      "message": {
+        "op": "hello",
+        "version": 1
+      },
+      "payload": "{\"op\":\"hello\",\"version\":1}",
+      "frame": "41000000010000001a0000007b226f70223a2268656c6c6f222c2276657273696f6e223a317d"
+    },
+    {
+      "name": "tts with voice and format",
+      "requestId": 2,
+      "message": {
+        "op": "tts",
+        "text": "Hello",
+        "voice": "narrator",
+        "format": "s16le"
+      },
+      "payload": "{\"format\":\"s16le\",\"op\":\"tts\",\"text\":\"Hello\",\"voice\":\"narrator\"}",
+      "frame": "41000000020000003f0000007b22666f726d6174223a227331366c65222c226f70223a22747473222c2274657874223a2248656c6c6f222c22766f696365223a226e61727261746f72227d"
+    },
+    {
+      "name": "tts without voice",
+      "requestId": 3,
+      "message": {
+        "op": "tts",
+        "text": "Hi",
+        "format": "f32le"
+      },
+      "payload": "{\"format\":\"f32le\",\"op\":\"tts\",\"text\":\"Hi\"}",
+      "frame": "4100000003000000290000007b22666f726d6174223a226633326c65222c226f70223a22747473222c2274657874223a224869227d"
+    },
+    {
+      "name": "tts text needing escapes and UTF-8",
+      "requestId": 4,
+      "message": {
+        "op": "tts",
+        "text": "Café \"quoted\" / line\nnext — 你好",
+        "format": "s16le"
+      },
+      "payload": "{\"format\":\"s16le\",\"op\":\"tts\",\"text\":\"Café \\\"quoted\\\" / line\\nnext — 你好\"}",
+      "frame": "41000000040000004f0000007b22666f726d6174223a227331366c65222c226f70223a22747473222c2274657874223a22436166c3a9205c2271756f7465645c22202f206c696e655c6e6e65787420e2809420e4bda0e5a5bd227d"
+    },
+    {
+      "name": "stt with model",
+      "requestId": 5,
+      "message": {
+        "op": "stt",
+        "format": "s16le",
+        "sampleRate": 16000,
+        "model": "parakeet-ultra"
+      },
+      "payload": "{\"format\":\"s16le\",\"model\":\"parakeet-ultra\",\"op\":\"stt\",\"sampleRate\":16000}",
+      "frame": "4100000005000000490000007b22666f726d6174223a227331366c65222c226d6f64656c223a22706172616b6565742d756c747261222c226f70223a22737474222c2273616d706c6552617465223a31363030307d"
+    },
+    {
+      "name": "stt without model",
+      "requestId": 6,
+      "message": {
+        "op": "stt",
+        "format": "f32le",
+        "sampleRate": 24000
+      },
+      "payload": "{\"format\":\"f32le\",\"op\":\"stt\",\"sampleRate\":24000}",
+      "frame": "4100000006000000300000007b22666f726d6174223a226633326c65222c226f70223a22737474222c2273616d706c6552617465223a32343030307d"
+    },
+    {
+      "name": "create-voice",
+      "requestId": 7,
+      "message": {
+        "op": "create-voice",
+        "name": "narrator",
+        "format": "s16le",
+        "sampleRate": 24000
+      },
+      "payload": "{\"format\":\"s16le\",\"name\":\"narrator\",\"op\":\"create-voice\",\"sampleRate\":24000}",
+      "frame": "41000000070000004b0000007b22666f726d6174223a227331366c65222c226e616d65223a226e61727261746f72222c226f70223a226372656174652d766f696365222c2273616d706c6552617465223a32343030307d"
+    },
+    {
+      "name": "end",
+      "requestId": 5,
+      "message": {
+        "op": "end"
+      },
+      "payload": "{\"op\":\"end\"}",
+      "frame": "41000000050000000c0000007b226f70223a22656e64227d"
+    },
+    {
+      "name": "voices",
+      "requestId": 8,
+      "message": {
+        "op": "voices"
+      },
+      "payload": "{\"op\":\"voices\"}",
+      "frame": "41000000080000000f0000007b226f70223a22766f69636573227d"
+    },
+    {
+      "name": "status",
+      "requestId": 9,
+      "message": {
+        "op": "status"
+      },
+      "payload": "{\"op\":\"status\"}",
+      "frame": "41000000090000000f0000007b226f70223a22737461747573227d"
+    },
+    {
+      "name": "unload",
+      "requestId": 10,
+      "message": {
+        "op": "unload"
+      },
+      "payload": "{\"op\":\"unload\"}",
+      "frame": "410000000a0000000f0000007b226f70223a22756e6c6f6164227d"
+    },
+    {
+      "name": "cancel addresses the request by its header id",
+      "requestId": 2,
+      "message": {
+        "op": "cancel"
+      },
+      "payload": "{\"op\":\"cancel\"}",
+      "frame": "41000000020000000f0000007b226f70223a2263616e63656c227d"
+    },
+    {
+      "name": "largest request id",
+      "requestId": 4294967295,
+      "message": {
+        "op": "status"
+      },
+      "payload": "{\"op\":\"status\"}",
+      "frame": "41000000ffffffff0f0000007b226f70223a22737461747573227d"
+    }
+  ],
+  "events": [
+    {
+      "name": "hello-ok",
+      "requestId": 1,
+      "message": {
+        "event": "hello-ok",
+        "version": 1,
+        "sampleRate": 24000
+      },
+      "frame": "4100000001000000330000007b226576656e74223a2268656c6c6f2d6f6b222c2276657273696f6e223a312c2273616d706c6552617465223a32343030307d"
+    },
+    {
+      "name": "audio-format",
+      "requestId": 2,
+      "message": {
+        "event": "audio-format",
+        "sampleRate": 24000,
+        "format": "s16le"
+      },
+      "frame": "41000000020000003c0000007b226576656e74223a22617564696f2d666f726d6174222c2273616d706c6552617465223a32343030302c22666f726d6174223a227331366c65227d"
+    },
+    {
+      "name": "tts done",
+      "requestId": 2,
+      "message": {
+        "event": "done",
+        "chunks": 2,
+        "samples": 48000,
+        "seconds": 2.0
+      },
+      "frame": "4100000002000000390000007b226576656e74223a22646f6e65222c226368756e6b73223a322c2273616d706c6573223a34383030302c227365636f6e6473223a322e307d"
+    },
+    {
+      "name": "partial",
+      "requestId": 5,
+      "message": {
+        "event": "partial",
+        "text": " the quick"
+      },
+      "frame": "4100000005000000270000007b226576656e74223a227061727469616c222c2274657874223a222074686520717569636b227d"
+    },
+    {
+      "name": "final",
+      "requestId": 5,
+      "message": {
+        "event": "final",
+        "text": "The quick brown fox."
+      },
+      "frame": "41000000050000002f0000007b226576656e74223a2266696e616c222c2274657874223a2254686520717569636b2062726f776e20666f782e227d"
+    },
+    {
+      "name": "bare done",
+      "requestId": 5,
+      "message": {
+        "event": "done"
+      },
+      "frame": "4100000005000000100000007b226576656e74223a22646f6e65227d"
+    },
+    {
+      "name": "voice-created",
+      "requestId": 7,
+      "message": {
+        "event": "voice-created",
+        "path": "/Users/you/.ark-voice-cli/voices/narrator.safetensors"
+      },
+      "frame": "4100000007000000580000007b226576656e74223a22766f6963652d63726561746564222c2270617468223a222f55736572732f796f752f2e61726b2d766f6963652d636c692f766f696365732f6e61727261746f722e7361666574656e736f7273227d"
+    },
+    {
+      "name": "voices",
+      "requestId": 8,
+      "message": {
+        "event": "voices",
+        "names": [
+          "narrator",
+          "robot"
+        ]
+      },
+      "frame": "41000000080000002f0000007b226576656e74223a22766f69636573222c226e616d6573223a5b226e61727261746f72222c22726f626f74225d7d"
+    },
+    {
+      "name": "status",
+      "requestId": 9,
+      "message": {
+        "event": "status",
+        "version": 1,
+        "synthesisModelLoaded": true,
+        "transcriptionModelLoaded": true,
+        "transcriptionModel": "qwen",
+        "requestsServed": 4,
+        "uptimeSeconds": 12.5
+      },
+      "frame": "41000000090000009e0000007b226576656e74223a22737461747573222c2276657273696f6e223a312c2273796e7468657369734d6f64656c4c6f61646564223a747275652c227472616e736372697074696f6e4d6f64656c4c6f61646564223a747275652c227472616e736372697074696f6e4d6f64656c223a227177656e222c227265717565737473536572766564223a342c22757074696d655365636f6e6473223a31322e357d"
+    },
+    {
+      "name": "models-missing error",
+      "requestId": 2,
+      "message": {
+        "event": "error",
+        "code": "models-missing",
+        "message": "Required model data is missing."
+      },
+      "frame": "4100000002000000550000007b226576656e74223a226572726f72222c22636f6465223a226d6f64656c732d6d697373696e67222c226d657373616765223a225265717569726564206d6f64656c2064617461206973206d697373696e672e227d"
+    },
+    {
+      "name": "connection-level error on id 0",
+      "requestId": 0,
+      "message": {
+        "event": "error",
+        "code": "bad-request",
+        "message": "Frame payload exceeds the limit."
+      },
+      "frame": "4100000000000000530000007b226576656e74223a226572726f72222c22636f6465223a226261642d72657175657374222c226d657373616765223a224672616d65207061796c6f6164206578636565647320746865206c696d69742e227d"
+    },
+    {
+      "name": "unsupported-version error",
+      "requestId": 1,
+      "message": {
+        "event": "error",
+        "code": "unsupported-version",
+        "message": "This server speaks protocol version 1.",
+        "version": 1
+      },
+      "frame": "41000000010000006d0000007b226576656e74223a226572726f72222c22636f6465223a22756e737570706f727465642d76657273696f6e222c226d657373616765223a22546869732073657276657220737065616b732070726f746f636f6c2076657273696f6e20312e222c2276657273696f6e223a317d"
+    }
+  ],
+  "pcmFrames": [
+    {
+      "name": "two s16le samples for request 2",
+      "requestId": 2,
+      "kind": 1,
+      "payload": "ff3f00c0",
+      "frame": "410100000200000004000000ff3f00c0"
+    },
+    {
+      "name": "empty pcm frame",
+      "requestId": 3,
+      "kind": 1,
+      "payload": "",
+      "frame": "410100000300000000000000"
+    }
+  ],
+  "invalidHeaders": [
+    {
+      "name": "wrong magic",
+      "header": "420000000100000000000000",
+      "error": "bad-magic"
+    },
+    {
+      "name": "unknown kind",
+      "header": "410900000100000000000000",
+      "error": "unknown-kind"
+    },
+    {
+      "name": "low flag byte set",
+      "header": "410001000100000000000000",
+      "error": "unsupported-flags"
+    },
+    {
+      "name": "high flag byte set",
+      "header": "410000020100000000000000",
+      "error": "unsupported-flags"
+    },
+    {
+      "name": "payload one byte over 64 MiB",
+      "header": "410000000100000001000004",
+      "error": "payload-too-large"
+    }
+  ],
+  "samples": {
+    "description": "s16le encodes by clamping to [-1, 1], scaling negatives by 32768 and positives by 32767, and truncating toward zero; it decodes by dividing by 32768. f32le is IEEE 754 single precision.",
+    "s16leEncode": {
+      "floats": [
+        0.0,
+        0.5,
+        -0.5,
+        1.0,
+        -1.0,
+        1.5,
+        -1.5,
+        0.25,
+        -0.25,
+        0.75
+      ],
+      "hex": "0000ff3f00c0ff7f0080ff7f0080ff1f00e0ff5f"
+    },
+    "s16leDecode": {
+      "hex": "0000ff3f00c0ff7f00800020",
+      "floats": [
+        0.0,
+        0.499969482421875,
+        -0.5,
+        0.999969482421875,
+        -1.0,
+        0.25
+      ]
+    },
+    "f32le": {
+      "floats": [
+        0.0,
+        0.5,
+        -0.5,
+        1.0,
+        -1.0,
+        0.25
+      ],
+      "hex": "000000000000003f000000bf0000803f000080bf0000803e"
+    }
+  },
+  "validHeaders": [
+    {
+      "name": "payload exactly 64 MiB",
+      "header": "410000000100000000000004",
+      "kind": 0,
+      "requestId": 1,
+      "payloadLength": 67108864
+    }
+  ]
+}
