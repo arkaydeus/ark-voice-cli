@@ -88,6 +88,7 @@ let package = Package(
       dependencies: [
         "ArkVoiceCLI",
         "ArkVoiceServer",
+        "ArkVoiceClient",
         .product(name: "Testing", package: "swift-testing"),
       ]
     ),

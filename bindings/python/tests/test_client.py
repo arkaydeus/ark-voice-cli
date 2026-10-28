@@ -469,3 +469,62 @@ def test_reply_reaches_a_waiting_thread_while_another_thread_reads() -> None:
         status_returned.set()
         reader.join(5)
         assert [type(event) for event in events] == [AudioChunk, SynthesisDone]
+
+
+@pytest.mark.parametrize("operation,payload", [
+    ("tts", b'{"op":"status"}'),
+    ("tts", b'{"event":"done","samples":null}'),
+    ("status", b'{"event":"status","uptimeSeconds":{}}'),
+])
+def test_malformed_control_fails_both_in_same_read(operation: str, payload: bytes) -> None:
+    from ark_voice import KIND_JSON, encode_frame, encode_message
+    def script(peer: Peer) -> None:
+        peer.handshake()
+        first = peer.expect(operation)
+        second = peer.expect("status")
+        peer.send_raw(encode_frame(KIND_JSON, first, payload) +
+                      encode_frame(KIND_JSON, second, encode_message(STATUS)))
+        peer.wait_closed()
+    with FakeServer(script) as server, Client(server.path) as client:
+        first = client._start(operation, {"op": operation})
+        status = client._start("status", {"op": "status"})
+        with pytest.raises(ProtocolError):
+            client._wait(first)
+        with pytest.raises(ProtocolError):
+            client._wait(status)
+        assert client.closed and not client._router.pending
+
+
+@pytest.mark.parametrize("cut", [5, 14])
+def test_truncated_eof_is_protocol_error(cut: int) -> None:
+    from ark_voice import KIND_JSON, encode_frame
+    def script(peer: Peer) -> None:
+        peer.handshake()
+        request = peer.expect("status")
+        peer.send_raw(encode_frame(KIND_JSON, request, b'{"event":"status"}')[:cut])
+    with FakeServer(script) as server, Client(server.path) as client:
+        with pytest.raises(ProtocolError) as caught:
+            client.status()
+        assert caught.value.reason == "truncated"
+
+
+def test_cancel_crosses_normal_reply_while_another_request_is_pending() -> None:
+    def script(peer: Peer) -> None:
+        peer.handshake()
+        tts = peer.expect("tts")
+        other = peer.expect("tts")
+        peer.send_json(peer.expect("status"), STATUS)
+        assert peer.expect("cancel") == tts
+        peer.done(tts, chunks=0, samples=0, seconds=0)
+        peer.error(tts, "unknown-request")
+        peer.send_json(peer.expect("status"), STATUS)
+        peer.done(other, chunks=0, samples=0, seconds=0)
+        peer.expect_eof()
+    with FakeServer(script) as server, Client(server.path) as client:
+        stream = client.synthesize("cancel")
+        other = client.synthesize("pending")
+        client.status()
+        stream.close()
+        assert client.status().version == 1
+        assert len(list(other)) == 1
+        assert not client._router.pending

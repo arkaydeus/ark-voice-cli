@@ -39,7 +39,6 @@ LONG = " ".join(
     ]
 )
 KEYWORDS = ("quick", "brown", "fox", "lazy", "dog")
-VOICES_DIR = Path.home() / ".ark-voice-cli" / "voices"
 
 
 @pytest.fixture(scope="module")
@@ -139,7 +138,7 @@ def test_cancel_then_status(client: Client) -> None:
     assert client.voices() is not None
 
 
-def test_create_voice(client: Client, fox: dict[str, Any]) -> None:
+def test_create_voice(client: Client, fox: dict[str, Any], server_socket: str) -> None:
     name = f"bindings-test-python-{secrets.token_hex(4)}"
     path = ""
     try:
@@ -152,7 +151,7 @@ def test_create_voice(client: Client, fox: dict[str, Any]) -> None:
     finally:
         if path:
             created = Path(path)
-            if created.parent.resolve() == VOICES_DIR.resolve() and created.stem == name:
+            if created.parent.resolve() == (Path(server_socket).parent / "voices").resolve() and created.stem == name:
                 created.unlink(missing_ok=True)
     assert name not in client.voices()
 
@@ -192,3 +191,31 @@ def test_default_binary_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
     else:
         assert binary is None and "ARK_VOICE_BINARY" in reason
     assert os.path.basename(str(default)) == "ark-voice"
+
+
+def test_profile_root_is_removed_after_failure(fox: dict[str, Any]) -> None:
+    from conftest import find_server_binary, running_server
+    binary, reason = find_server_binary()
+    if binary is None:
+        pytest.skip(reason)
+    voices = Path.home() / ".ark-voice-cli" / "voices"
+    def snapshot() -> dict[str, bytes]:
+        return {p.name: p.read_bytes() for p in voices.glob("*") if p.is_file()}
+    before = snapshot()
+    class InjectedFailure(Exception):
+        pass
+    directory = None
+    try:
+        with pytest.raises(InjectedFailure):
+            with running_server(binary) as socket_path:
+                directory = Path(socket_path).parent
+                with Client(socket_path) as connected:
+                    saved = Path(connected.create_voice("failure-test", fox["audio"]))
+                    assert saved.parent == directory / "voices"
+                    assert saved.exists()
+                    raise InjectedFailure()
+    except ModelsMissingError as error:
+        pytest.skip(str(error))
+    finally:
+        assert directory is None or not directory.exists()
+        assert snapshot() == before

@@ -43,7 +43,7 @@ and throws `ArkVoiceClientError.notRunning` if nothing is listening, or
 
 ## Synthesize
 
-`synthesize` returns an `AsyncThrowingStream`. Audio arrives while the rest of
+`synthesize` returns a single-consumer `RequestStream<SynthesisEvent>`. Audio arrives while the rest of
 the text is still being generated; a `.done` summary comes last.
 
 ```swift
@@ -127,8 +127,10 @@ print(try await status.requestsServed, try await speech.audio.duration)
 
 Breaking out of a `for try await` loop, or cancelling the task that iterates,
 sends `cancel` for that request and discards the rest of its frames. The
-connection stays usable. The server still runs model work one request at a
-time.
+connection stays usable, including when the sequence remains retained after the loop.
+Call `stream.cancel()` to stop a request without iterating it. A manually retained
+iterator keeps iteration alive until dropped or explicitly cancelled. The server
+still runs model work one request at a time.
 
 ## Relation to `VoiceClient`
 
@@ -149,5 +151,6 @@ scripted fake server. It also includes integration tests against a real
 `ark-voice serve`. Those use `$ARK_VOICE_BINARY`, or else
 `.build/release/ark-voice` from `./Scripts/build-release.sh`. They are skipped
 when neither exists. The model-backed test is also skipped unless Parakeet v2
-and Chatterbox are in `~/.ark-voice-cli`. It creates a voice profile named
-`bindings-test-swift-…` in `~/.ark-voice-cli/voices` and deletes it afterwards.
+and Chatterbox are in `~/.ark-voice-cli`. Each daemon uses `--model-root` with a
+temporary directory and a symlink to existing model files. Profiles stay in that
+temporary root, which is removed even when a test fails.

@@ -271,7 +271,10 @@ What this buys, measured on an M-series Mac with the weights already in the page
 | `ark-voice client tts` (resident models) | ~0.24 s |
 
 Requests may be pipelined on one connection — every frame carries its request id — though model work
-still runs one at a time. `--idle-unload` (default 300 s) releases the models during quiet periods,
+still runs one at a time. `serve --model-root /path/to/root` isolates models, voice profiles,
+and the default socket under that root. Binding integration tests use temporary roots,
+sharing only the existing `mlx-audio` model directory through a symlink.
+`--idle-unload` (default 300 s) releases the models during quiet periods,
 and `Scripts/com.ark-voice.serve.plist` is an example launchd agent.
 
 With `stt --stream -o transcript.txt`, incremental text is written to stderr while the final
@@ -288,7 +291,7 @@ stay in the one `ark-voice serve` process and no ML code loads into yours:
 
 | Language | Where | Shape |
 | --- | --- | --- |
-| Swift | [`ArkVoiceClient`](bindings/swift/README.md) library product | `async`/`await`, `AsyncThrowingStream`; Foundation only |
+| Swift | [`ArkVoiceClient`](bindings/swift/README.md) library product | `async`/`await`, `RequestStream`; Foundation only |
 | TypeScript | [`bindings/typescript`](bindings/typescript/README.md) | Node 18+ and Bun, async iterables, zero runtime dependencies |
 | Python | [`bindings/python`](bindings/python/README.md) | 3.10+, standard library only, sync and asyncio clients |
 
@@ -309,6 +312,10 @@ with Client() as voice:
 The bindings test against shared byte vectors in
 [`bindings/test-vectors`](bindings/test-vectors/README.md), and each has an integration suite that
 starts a real server when one is built.
+
+Swift streaming methods return `RequestStream<Element>`, a single-consumer async sequence.
+Leaving its loop cancels unfinished work even if the sequence remains retained;
+call `stream.cancel()` to stop an unused or manually retained iterator.
 
 ## Notes
 

@@ -745,3 +745,75 @@ describe("housekeeping and lifecycle", () => {
     expect(escaped.closed).toBe(true);
   });
 });
+
+
+test("blocked uploads stay bounded, cancel unsent frames, and share the socket", async () => {
+  let uploaded = 0;
+  let ends = 0;
+  const server = await serve((frame, connection) => {
+    if (frame.kind === 1) uploaded += frame.payload.length;
+    if (frame.message?.["op"] === "end") ends++;
+    if (frame.message?.["op"] === "cancel") {
+      connection.sendJson(frame.requestId, { event: "done" });
+      connection.sendJson(frame.requestId, { event: "error", code: "unknown-request" });
+    }
+    housekeeping(frame, connection);
+  });
+  const { client, connection } = await connect(server);
+  connection.pauseReads();
+  let encoded = 0;
+  class Recording extends Uint8Array {
+    override subarray(begin?: number, end?: number): Uint8Array<ArrayBuffer> {
+      const part = super.subarray(begin, end);
+      encoded += part.length;
+      return part;
+    }
+  }
+  const audio = new PCMAudio(new Recording(64 * 1024 * 1024), 16000);
+  const controller = new AbortController();
+  const stream = client.transcribe(audio, { signal: controller.signal });
+  const failed = rejection(stream.next());
+  expect(encoded).toBeLessThan(2 * 1024 * 1024);
+  const status = client.status();
+  const reason = new Error("stop upload");
+  controller.abort(reason);
+  expect(await failed).toBe(reason);
+  connection.resumeReads();
+  expect((await status).version).toBe(1);
+  await connection.waitFor((f) => f.message?.["op"] === "cancel");
+  expect(uploaded).toBeLessThan(2 * 1024 * 1024);
+  expect(ends).toBe(0);
+  expect(connection.messages.filter((m) => m.message["op"] === "cancel")).toHaveLength(1);
+  expect((await client.voices()).length).toBe(2);
+});
+
+test("close is bounded when a peer stops reading uploads", async () => {
+  const server = await serve();
+  const { client, connection } = await connect(server);
+  connection.pauseReads();
+  const stream = client.transcribe(new PCMAudio(new Uint8Array(32 * 1024 * 1024), 16000));
+  const pending = rejection(stream.next());
+  const started = Date.now();
+  await client.close();
+  expect(Date.now() - started).toBeLessThan(3000);
+  expect(await pending).toBeInstanceOf(ConnectionClosedError);
+});
+
+test("cancel crosses a normal terminal and late unknown-request with another stream pending", async () => {
+  const server = await serve((frame, connection) => {
+    if (frame.message?.["op"] === "cancel") {
+      connection.sendJson(frame.requestId, { event: "done" });
+      connection.sendJson(frame.requestId, { event: "error", code: "unknown-request" });
+    }
+    housekeeping(frame, connection);
+  });
+  const { client, connection } = await connect(server);
+  const cancelled = client.synthesize("cancel");
+  const other = client.synthesize("pending");
+  expect((await client.status()).version).toBe(1);
+  await cancelled.cancel();
+  expect((await client.status()).version).toBe(1);
+  connection.sendJson(other.requestId, { event: "done", samples: 0, chunks: 0, seconds: 0 });
+  expect((await collect(other)).length).toBe(1);
+  expect(connection.messages.filter((m) => m.message["op"] === "cancel")).toHaveLength(1);
+});

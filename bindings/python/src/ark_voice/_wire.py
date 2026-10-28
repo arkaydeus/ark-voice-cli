@@ -130,13 +130,24 @@ def encode_message(message: Mapping[str, Any]) -> bytes:
 
 
 def decode_message(payload: bytes | bytearray | memoryview) -> dict[str, Any]:
-    """Parses a JSON control payload into a dict."""
+    """Parses and validates a server JSON control payload."""
     try:
         message = json.loads(bytes(payload).decode("utf-8"))
     except (UnicodeDecodeError, ValueError) as error:
         raise ProtocolError(f"Malformed JSON control message: {error}") from error
     if not isinstance(message, dict):
         raise ProtocolError("JSON control message is not an object.")
+    if not isinstance(message.get("event"), str):
+        raise ProtocolError("JSON control message has no string event.")
+    for key in ("version", "sampleRate", "chunks", "samples", "requestsServed"):
+        if key in message and (type(message[key]) is not int or message[key] < 0):
+            raise ProtocolError(f"Invalid integer field {key}.")
+    for key in ("seconds", "uptimeSeconds"):
+        if key in message and (
+            type(message[key]) not in (int, float)
+            or not 0 <= message[key] <= 1.7976931348623157e308
+        ):
+            raise ProtocolError(f"Invalid numeric field {key}.")
     return message
 
 

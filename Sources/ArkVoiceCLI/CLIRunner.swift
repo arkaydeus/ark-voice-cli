@@ -140,9 +140,12 @@ enum CLIRunner {
   // MARK: - Server
 
   static func serve(_ options: ServeOptions) async throws {
-    let session = makeSession(transcriptionModel: options.transcriptionModel)
+    var sessionConfiguration = SessionConfiguration.fromEnvironment(progress: reportProgress)
+    if let root = options.modelRoot { sessionConfiguration.modelRoot = URL(fileURLWithPath: root) }
+    if let model = options.transcriptionModel { sessionConfiguration.transcriptionModel = model }
+    let session = VoiceSession(configuration: sessionConfiguration)
     let configuration = VoiceServer.Configuration(
-      socketPath: options.socketPath ?? defaultSocketPath(),
+      socketPath: options.socketPath ?? defaultSocketPath(modelRoot: sessionConfiguration.modelRoot),
       idleUnloadSeconds: options.idleUnloadSeconds,
       idleExitSeconds: options.idleExitSeconds,
       log: { writeStandardError($0 + "\n") }

@@ -431,6 +431,8 @@ export class ArkVoiceClient {
   readonly #socket: Socket;
   readonly #decoder = new FrameDecoder();
   readonly #pending = new Map<number, Channel>();
+  readonly #writes: Array<{ frames: Iterator<Uint8Array>; channel?: Channel }> = [];
+  #backpressured = false;
   #nextId = 1;
   #closed = false;
   #closeReason: unknown;
@@ -438,6 +440,10 @@ export class ArkVoiceClient {
 
   private constructor(socket: Socket, socketPath: string) {
     this.#socket = socket;
+    socket.on("drain", () => {
+      this.#backpressured = false;
+      this.#flushWrites();
+    });
     this.socketPath = socketPath;
     this.#socketClosed = new Promise((resolve) => socket.once("close", () => resolve()));
     socket.on("data", (chunk: Uint8Array) => this.#receive(chunk));
@@ -699,11 +705,15 @@ export class ArkVoiceClient {
     this.#pending.set(id, channel);
     this.#write(encodeMessageFrame(id, message));
     if (upload) {
-      const data = upload.data;
-      for (let offset = 0; offset < data.byteLength; offset += UPLOAD_CHUNK_BYTES) {
-        this.#write(encodeFrame(FrameKind.PCM, id, data.subarray(offset, offset + UPLOAD_CHUNK_BYTES)));
+      function* frames(): Generator<Uint8Array> {
+        const data = upload!.data;
+        for (let offset = 0; offset < data.byteLength; offset += UPLOAD_CHUNK_BYTES) {
+          yield encodeFrame(FrameKind.PCM, id, data.subarray(offset, offset + UPLOAD_CHUNK_BYTES));
+        }
+        yield encodeMessageFrame(id, { op: "end" });
       }
-      this.#write(encodeMessageFrame(id, { op: "end" }));
+      this.#writes.push({ frames: frames(), channel });
+      this.#flushWrites();
     }
 
     if (signal) {
@@ -720,7 +730,20 @@ export class ArkVoiceClient {
 
   #write(bytes: Uint8Array): void {
     if (this.#closed) return;
-    this.#socket.write(bytes);
+    this.#writes.push({ frames: [bytes][Symbol.iterator]() });
+    this.#flushWrites();
+  }
+
+  #flushWrites(): void {
+    while (!this.#closed && !this.#backpressured && this.#writes.length) {
+      const job = this.#writes.shift()!;
+      if (job.channel && (job.channel.draining || job.channel.terminalReceived)) continue;
+      const next = job.frames.next();
+      if (next.done) continue;
+      // Encode one frame at a time and let other requests share the writer.
+      this.#backpressured = !this.#socket.write(next.value);
+      this.#writes.push(job);
+    }
   }
 
   readonly #stopFn: StopRequest = (channel) => this.#stop(channel);
@@ -791,6 +814,7 @@ export class ArkVoiceClient {
     this.#closeReason = reason;
     const channels = [...this.#pending.values()];
     this.#pending.clear();
+    this.#writes.length = 0;
     for (const channel of channels) channel.fail(reason);
     if (destroy) this.#socket.destroy();
   }

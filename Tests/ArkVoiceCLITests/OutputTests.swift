@@ -1,3 +1,4 @@
+import ArkVoiceClient
 import ArkVoiceKit
 import ArkVoiceServer
 import AVFoundation

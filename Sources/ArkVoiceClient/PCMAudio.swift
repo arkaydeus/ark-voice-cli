@@ -97,12 +97,15 @@ public struct PCMAudio: Sendable, Equatable {
 
 /// Errors reading a WAV file into ``PCMAudio``.
 public enum WAVError: LocalizedError, Equatable, Sendable {
+  case invalidFormat
   case notWAV
   case missingChunk(String)
   case unsupportedEncoding(formatTag: Int, bitsPerSample: Int)
 
   public var errorDescription: String? {
     switch self {
+    case .invalidFormat:
+      "Invalid WAV format header or partial PCM frame."
     case .notWAV:
       "Not a RIFF/WAVE file."
     case .missingChunk(let name):
@@ -163,15 +166,26 @@ extension PCMAudio {
       let size = u32(offset + 4)
       let start = offset + 8
       let end = size == 0xFFFF_FFFF ? raw.count : min(raw.count, start + size)
-      if id == "fmt ", end - start >= 16 {
+      if id == "fmt " {
+        guard size >= 16, start + size <= raw.count else { throw WAVError.invalidFormat }
         formatTag = u16(start)
-        channels = max(1, u16(start + 2))
+        channels = u16(start + 2)
         rate = u32(start + 4)
         bits = u16(start + 14)
-        if formatTag == 0xFFFE, end - start >= 26 { formatTag = u16(start + 24) }
+        guard channels > 0, rate > 0 else { throw WAVError.invalidFormat }
+        if formatTag == 0xFFFE {
+          guard size >= 40, u16(start + 16) >= 22,
+            18 + u16(start + 16) <= size, u16(start + 18) == bits
+          else { throw WAVError.invalidFormat }
+          let guid = Array(raw[start + 24..<start + 40])
+          let tail: [UInt8] = [0, 0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xaa, 0, 0x38, 0x9b, 0x71]
+          guard (guid[0] == 1 || guid[0] == 3), Array(guid.dropFirst()) == tail
+          else { throw WAVError.invalidFormat }
+          formatTag = Int(guid[0])
+        }
       } else if id == "data" {
         payload = raw[start..<end]
-        break
+        if size == 0xFFFF_FFFF || start + size > raw.count { break }
       }
       offset = start + size + (size & 1)
     }
@@ -186,7 +200,8 @@ extension PCMAudio {
     }
 
     let frameBytes = format.bytesPerSample * channels
-    let whole = Data(payload.prefix(payload.count - payload.count % frameBytes))
+    guard payload.count % frameBytes == 0 else { throw WAVError.invalidFormat }
+    let whole = Data(payload)
     guard channels > 1 else {
       self.init(data: whole, sampleRate: rate, format: format)
       return

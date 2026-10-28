@@ -105,21 +105,22 @@ final class Transport: @unchecked Sendable {
     audio: PCMAudio? = nil,
     retaining owner: AnyObject? = nil,
     _ transform: @escaping @Sendable (Inbound) -> Element?
-  ) -> AsyncThrowingStream<Element, any Error> {
-    AsyncThrowingStream { continuation in
-      let requestID = open(
-        message,
-        audio: audio,
-        owner: owner,
-        deliver: { inbound in
-          if let element = transform(inbound) { continuation.yield(element) }
-        },
-        finish: { error in continuation.finish(throwing: error) }
-      )
-      continuation.onTermination = { [weak self] termination in
-        if case .cancelled = termination { self?.cancel(requestID) }
-      }
+  ) -> RequestStream<Element> {
+    let (base, continuation) = AsyncThrowingStream<Element, any Error>.makeStream()
+    let requestID = open(
+      message,
+      audio: audio,
+      owner: owner,
+      deliver: { inbound in
+        if let element = transform(inbound) { continuation.yield(element) }
+      },
+      finish: { error in continuation.finish(throwing: error) }
+    )
+    let cancel: @Sendable () -> Void = { [weak self] in self?.cancel(requestID) }
+    continuation.onTermination = { termination in
+      if case .cancelled = termination { cancel() }
     }
+    return RequestStream(base, cancel: cancel)
   }
 
   /// Sends a request and collects its control messages, ending with the

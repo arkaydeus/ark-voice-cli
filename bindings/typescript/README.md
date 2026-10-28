@@ -191,5 +191,6 @@ request loads about a gigabyte of weights, so the suite takes tens of seconds.
 ARK_VOICE_BINARY=/path/to/ark-voice bun test test/integration.test.ts
 ```
 
-The voice-profile test creates `bindings-test-ts-<random>` in
-`~/.ark-voice-cli/voices` and deletes it afterwards.
+Integration daemons use a temporary `--model-root`, sharing existing model files
+through a symlink. Voice profiles stay in that temporary root, which is removed
+at teardown, including after test failures.

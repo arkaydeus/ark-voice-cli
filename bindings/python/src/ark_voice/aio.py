@@ -1,6 +1,6 @@
 """asyncio client for ``ark-voice serve``.
 
-One reader task routes frames to per-request queues. Requests are written to
+One reader task routes frames to per-request queues. Requests are queued for
 the transport when the method is called, so these are pipelined::
 
     status = client.status()          # sent now
@@ -12,8 +12,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections import deque
 from types import TracebackType
-from typing import Any, AsyncIterator, Callable, Coroutine, Generator, Generic, TypeVar
+from typing import Any, AsyncIterator, Callable, Coroutine, Generator, Generic, Iterator, TypeVar
 
 from ._audio import PCMAudio, SampleFormat
 from ._core import END, Request, Router
@@ -78,7 +79,11 @@ class _AsyncStream(Generic[_T]):
     async def __anext__(self) -> _T:
         if self._closed:
             raise StopAsyncIteration
-        item = await self._client._next(self._request)
+        try:
+            item = await self._client._next(self._request)
+        except asyncio.CancelledError:
+            self._closed = True
+            raise
         if item is END:
             self._closed = True
             raise StopAsyncIteration
@@ -133,7 +138,8 @@ class AsyncClient:
         self._loop = asyncio.get_running_loop()
         self._router = Router()
         self._decoder = FrameDecoder()
-        self._drain_lock = asyncio.Lock()
+        self._writes: deque[tuple[Request | None, Iterator[bytes]]] = deque()
+        self._writer_task: asyncio.Task[None] | None = None
         self._server_version = PROTOCOL_VERSION
         self._sample_rate = SYNTHESIS_SAMPLE_RATE
         self._reader_task = self._loop.create_task(self._read_loop())
@@ -205,9 +211,15 @@ class AsyncClient:
                 await task
             except asyncio.CancelledError:
                 pass
+        if self._writer_task is not None:
+            self._writer_task.cancel()
+            try:
+                await self._writer_task
+            except asyncio.CancelledError:
+                pass
         try:
-            await self._writer.wait_closed()
-        except (OSError, RuntimeError):
+            await asyncio.wait_for(self._writer.wait_closed(), timeout=1)
+        except (OSError, RuntimeError, asyncio.TimeoutError):
             pass
 
     async def __aenter__(self) -> AsyncClient:
@@ -328,39 +340,48 @@ class AsyncClient:
         event = asyncio.Event()
         request.waiter = event
         request.notify = event.set
-        request_frames = [encode_frame(KIND_JSON, request.request_id, encode_message(message))]
+        self._write([encode_frame(KIND_JSON, request.request_id, encode_message(message))])
         if upload is not None:
-            request_frames.extend(upload_frames(request.request_id, upload))
-        self._write(request_frames)
+            self._write(upload_frames(request.request_id, upload), request)
         return request
 
-    def _write(self, frames: list[bytes]) -> None:
+    def _write(self, frames: Iterator[bytes] | list[bytes], request: Request | None = None) -> None:
         if self._router.closed or self._writer.is_closing():
             raise ConnectionClosedError(self._router.close_reason)
+        self._writes.append((request, iter(frames)))
+        if self._writer_task is None or self._writer_task.done():
+            self._writer_task = self._loop.create_task(self._send_loop())
+
+    async def _send_loop(self) -> None:
         try:
-            self._writer.writelines(frames)
+            while self._writes and not self.closed:
+                request, frames = self._writes.popleft()
+                if request is not None and (request.discarding or request.finished):
+                    continue
+                frame = next(frames, None)
+                if frame is None:
+                    continue
+                self._writer.write(frame)
+                # Keep just one encoded frame queued while a peer stops reading.
+                await self._writer.drain()
+                await asyncio.sleep(0)
+                # Requests share the writer a frame at a time.
+                self._writes.append((request, frames))
         except (OSError, RuntimeError) as error:
             self._lost(f"send failed: {error}")
-            raise ConnectionClosedError(self._router.close_reason) from error
-
-    async def _drain(self) -> None:
-        if self._router.closed:
-            return
-        async with self._drain_lock:
-            try:
-                await self._writer.drain()
-            except (OSError, RuntimeError) as error:
-                self._lost(f"send failed: {error}")
 
     async def _next(self, request: Request) -> Any:
-        await self._drain()
-        while True:
-            item = request.pop()
-            if item is not None:
-                return item
-            event: asyncio.Event = request.waiter
-            event.clear()
-            await event.wait()
+        try:
+            while True:
+                item = request.pop()
+                if item is not None:
+                    return item
+                event: asyncio.Event = request.waiter
+                event.clear()
+                await event.wait()
+        except asyncio.CancelledError:
+            self._cancel(request)
+            raise
 
     async def _wait(self, request: Request) -> Any:
         while await self._next(request) is not END:
@@ -371,10 +392,11 @@ class AsyncClient:
         try:
             while True:
                 data = await self._reader.read(_RECV_SIZE)
-                if not data:
-                    self._lost("the server closed the connection")
-                    return
                 try:
+                    if not data:
+                        self._decoder.finish()
+                        self._lost("the server closed the connection")
+                        return
                     for frame in self._decoder.feed(data):
                         if self._router.dispatch(frame):
                             self._close_transport()
@@ -399,8 +421,9 @@ class AsyncClient:
         self._close_transport()
 
     def _close_transport(self) -> None:
-        if not self._writer.is_closing():
-            self._writer.close()
+        self._writes.clear()
+        # Graceful close can wait forever for buffered uploads to drain.
+        self._writer.transport.abort()
 
     def _cancel(self, request: Request) -> None:
         if self._router.start_cancel(request):

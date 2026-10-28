@@ -254,9 +254,16 @@ def decode_wav(data: bytes | bytearray | memoryview) -> PCMAudio:
         "<HHIIHH", fmt_chunk, 0
     )
     if tag == _WAVE_FORMAT_EXTENSIBLE:
-        if len(fmt_chunk) < 26:
+        if len(fmt_chunk) < 40:
             raise ValueError("WAVE_FORMAT_EXTENSIBLE fmt chunk is too short")
-        (tag,) = struct.unpack_from("<H", fmt_chunk, 24)
+        extension_size, valid_bits = struct.unpack_from("<HH", fmt_chunk, 16)
+        if extension_size < 22 or 18 + extension_size > len(fmt_chunk) or valid_bits != bits:
+            raise ValueError("Invalid WAVE_FORMAT_EXTENSIBLE structure")
+        guid = fmt_chunk[24:40]
+        if guid not in (bytes.fromhex("0100000000001000800000aa00389b71"),
+                        bytes.fromhex("0300000000001000800000aa00389b71")):
+            raise ValueError("Unsupported WAVE_FORMAT_EXTENSIBLE subformat GUID")
+        tag = guid[0]
 
     format: SampleFormat
     if tag == _WAVE_FORMAT_PCM and bits == 16:

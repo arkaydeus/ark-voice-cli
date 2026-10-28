@@ -86,6 +86,9 @@ export class FakeConnection {
     this.#socket.write(bytes);
   }
 
+  pauseReads(): void { this.#socket.pause(); }
+  resumeReads(): void { this.#socket.resume(); }
+
   /** Closes the connection from the server side (the client sees EOF). */
   end(): void {
     this.#socket.end();

@@ -7,7 +7,7 @@
  */
 import { afterAll, describe, expect, test } from "bun:test";
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, unlinkSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, unlinkSync, symlinkSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,25 +40,36 @@ async function startServer(binary: string): Promise<RunningServer> {
   const dir = mkdtempSync("/tmp/arkv-ts-it-");
   const socketPath = join(dir, "ark-voice.sock");
   const log: string[] = [];
-  const child = spawn(binary, ["serve", "--socket", socketPath, "--idle-unload", "off"], {
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  child.stdout?.on("data", (chunk: Buffer) => log.push(chunk.toString()));
-  child.stderr?.on("data", (chunk: Buffer) => log.push(chunk.toString()));
-  const deadline = Date.now() + 15_000;
-  while (!existsSync(socketPath)) {
-    if (child.exitCode !== null || child.signalCode !== null) {
-      rmSync(dir, { recursive: true, force: true });
-      throw new Error(`ark-voice serve exited early (${child.exitCode ?? child.signalCode}):\n${log.join("")}`);
+  let child: ChildProcess | undefined;
+  try {
+    const models = join(homedir(), ".ark-voice-cli", "mlx-audio");
+    if (existsSync(models)) symlinkSync(models, join(dir, "mlx-audio"), "dir");
+    const spawned = spawn(binary, ["serve", "--model-root", dir, "--socket", socketPath, "--idle-unload", "off"], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    child = spawned;
+    spawned.stdout?.on("data", (chunk: Buffer) => log.push(chunk.toString()));
+    spawned.stderr?.on("data", (chunk: Buffer) => log.push(chunk.toString()));
+    await new Promise<void>((resolve, reject) => {
+      spawned.once("spawn", resolve);
+      spawned.once("error", reject);
+    });
+    const deadline = Date.now() + 15_000;
+    while (!existsSync(socketPath)) {
+      if (spawned.exitCode !== null || spawned.signalCode !== null) {
+        throw new Error(`ark-voice serve exited early (${spawned.exitCode ?? spawned.signalCode}):\n${log.join("")}`);
+      }
+      if (Date.now() > deadline) {
+        throw new Error(`ark-voice serve did not create ${socketPath} within 15 s:\n${log.join("")}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
     }
-    if (Date.now() > deadline) {
-      child.kill("SIGKILL");
-      rmSync(dir, { recursive: true, force: true });
-      throw new Error(`ark-voice serve did not create ${socketPath} within 15 s:\n${log.join("")}`);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    return { process: spawned, dir, socketPath, log };
+  } catch (error) {
+    if (child?.pid) await stopServer({ process: child, dir, socketPath, log });
+    else rmSync(dir, { recursive: true, force: true });
+    throw error;
   }
-  return { process: child, dir, socketPath, log };
 }
 
 async function stopServer(server: RunningServer): Promise<void> {
@@ -80,23 +91,29 @@ let transcriptionSkip = "";
 
 if (binary.path) {
   server = await startServer(binary.path);
-  // Probe once so model-backed tests can be skipped (not failed) when models are missing.
-  const probe = await ArkVoiceClient.connect({ socketPath: server.socketPath });
   try {
+    // Probe once so model-backed tests can be skipped (not failed) when models are missing.
+    const probe = await ArkVoiceClient.connect({ socketPath: server.socketPath });
     try {
-      await probe.synthesizeAudio("Hi.");
-    } catch (error) {
-      if (!(error instanceof ModelsMissingError)) throw error;
-      synthesisSkip = `synthesis models missing: ${error.message}`;
+      try {
+        await probe.synthesizeAudio("Hi.");
+      } catch (error) {
+        if (!(error instanceof ModelsMissingError)) throw error;
+        synthesisSkip = `synthesis models missing: ${error.message}`;
+      }
+      try {
+        await probe.transcribeText(PCMAudio.fromSamples(new Float32Array(8000), 16000));
+      } catch (error) {
+        if (!(error instanceof ModelsMissingError)) throw error;
+        transcriptionSkip = `transcription model missing: ${error.message}`;
+      }
+    } finally {
+      await probe.close();
     }
-    try {
-      await probe.transcribeText(PCMAudio.fromSamples(new Float32Array(8000), 16000));
-    } catch (error) {
-      if (!(error instanceof ModelsMissingError)) throw error;
-      transcriptionSkip = `transcription model missing: ${error.message}`;
-    }
-  } finally {
-    await probe.close();
+  } catch (error) {
+    await stopServer(server);
+    server = undefined;
+    throw error;
   }
 } else {
   console.warn(`[integration] SKIPPED: no ark-voice binary (${binary.reason})`);
@@ -125,6 +142,31 @@ function sentenceAudio(): Promise<PCMAudio> {
 }
 
 describe.skipIf(!binary.path)("ark-voice serve", () => {
+  test.skipIf(!!synthesisSkip)("profile root is removed after an injected failure", async () => {
+    const voices = join(homedir(), ".ark-voice-cli", "voices");
+    const snapshot = (): Array<[string, string]> => existsSync(voices)
+      ? readdirSync(voices).sort().map((name) => [name, readFileSync(join(voices, name)).toString("base64")])
+      : [];
+    const before = snapshot();
+    const isolated = await startServer(binary.path!);
+    let connected: ArkVoiceClient | undefined;
+    const failure = new Error("injected after voice creation");
+    try {
+      connected = await ArkVoiceClient.connect({ socketPath: isolated.socketPath });
+      const saved = await connected.createVoice("failure-test", await sentenceAudio());
+      expect(dirname(saved)).toBe(join(isolated.dir, "voices"));
+      expect(existsSync(saved)).toBe(true);
+      throw failure;
+    } catch (error) {
+      expect(error).toBe(failure);
+    } finally {
+      await connected?.close();
+      await stopServer(isolated);
+      expect(existsSync(isolated.dir)).toBe(false);
+      expect(snapshot()).toEqual(before);
+    }
+  }, MODEL_TIMEOUT);
+
   test("connect, status, voices, unload", async () => {
     await withClient(async (client) => {
       expect(client.serverVersion).toBe(1);
@@ -246,7 +288,7 @@ describe.skipIf(!binary.path)("ark-voice serve", () => {
     async () => {
       const name = `bindings-test-ts-${Math.random().toString(36).slice(2, 10)}`;
       const audio = await sentenceAudio();
-      const voicesDir = resolve(homedir(), ".ark-voice-cli", "voices");
+      const voicesDir = resolve(server!.dir, "voices");
       let path = "";
       try {
         await withClient(async (client) => {
@@ -255,7 +297,7 @@ describe.skipIf(!binary.path)("ark-voice serve", () => {
           expect(await client.voices()).toContain(name);
         });
       } finally {
-        // Only ever delete our own profile inside the user's voices directory.
+        // Delete only this test's profile in the isolated server root.
         if (path) {
           const resolved = resolve(path);
           if (dirname(resolved) === voicesDir && basename(resolved, extname(resolved)) === name && existsSync(resolved)) {

@@ -136,9 +136,21 @@ def test_pipelined_interleaving_and_unknown_ids() -> None:
         peer.handshake()
         tts = peer.expect("tts")
         stt = peer.expect("stt")
-        assert peer.read_frame().kind == KIND_PCM
-        assert peer.expect("end") == stt
-        status = peer.expect("status")
+        # Upload frames may share the writer with housekeeping.
+        status = None
+        ended = False
+        while status is None or not ended:
+            frame = peer.read_frame()
+            if frame.kind == KIND_PCM:
+                assert frame.request_id == stt
+            else:
+                import json
+                op = json.loads(frame.payload)["op"]
+                if op == "status":
+                    status = frame.request_id
+                else:
+                    assert op == "end" and frame.request_id == stt
+                    ended = True
         peer.send_json(77, {"event": "done"})
         peer.send_pcm(tts, b"\x01\x00")
         peer.send_json(stt, {"event": "partial", "text": "a"})
@@ -275,3 +287,182 @@ def test_not_running() -> None:
     with pytest.raises(NotRunningError):
         asyncio.run(AsyncClient.connect(os.path.join(directory, "none.sock")))
     os.rmdir(directory)
+
+
+@pytest.mark.parametrize("operation", ["stream", "reply"])
+def test_task_cancellation_of_retained_request(operation: str) -> None:
+    def script(peer: Peer) -> None:
+        peer.handshake()
+        request = peer.expect("tts" if operation == "stream" else "unload")
+        other = peer.expect("tts")
+        peer.send_json(peer.expect("status"), STATUS)
+        assert peer.expect("cancel") == request
+        # Cancellation crossed the normal reply. Late unknown-request is harmless.
+        peer.done(request, chunks=0, samples=0, seconds=0)
+        peer.error(request, "unknown-request")
+        peer.send_json(peer.expect("status"), STATUS)
+        peer.done(other, chunks=0, samples=0, seconds=0)
+        peer.expect_eof()
+
+    async def main(path: str) -> None:
+        async with await AsyncClient.connect(path) as client:
+            retained = client.synthesize("long") if operation == "stream" else client.unload()
+            async def run() -> None:
+                if operation == "stream":
+                    await retained.__anext__()
+                else:
+                    await retained
+            other = client.synthesize("still pending")
+            task = asyncio.create_task(run())
+            await client.status()  # ensures the request is on the wire
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            assert (await client.status()).version == 1
+            assert len([event async for event in other]) == 1
+            assert not client._router.pending
+            if operation == "stream":
+                assert retained.finished
+                await retained.aclose()  # no duplicate cancel
+
+    with FakeServer(script) as server:
+        asyncio.run(main(server.path))
+
+
+@pytest.mark.parametrize("operation,payload", [
+    ("tts", b'{"op":"status"}'),
+    ("tts", b'{"event":"done","samples":null}'),
+    ("status", b'{"event":"status","requestsServed":"invalid"}'),
+])
+def test_malformed_control_fails_all_requests(operation: str, payload: bytes) -> None:
+    from ark_voice import KIND_JSON, ProtocolError, encode_frame, encode_message
+    def script(peer: Peer) -> None:
+        peer.handshake()
+        first = peer.expect(operation)
+        second = peer.expect("status")
+        peer.send_raw(encode_frame(KIND_JSON, first, payload) +
+                      encode_frame(KIND_JSON, second, encode_message(STATUS)))
+        peer.wait_closed()
+
+    async def main(path: str) -> None:
+        async with await AsyncClient.connect(path) as client:
+            first = client.synthesize("x") if operation == "tts" else client.status()
+            reply = client.status()
+            with pytest.raises(ProtocolError):
+                if operation == "tts":
+                    await first.__anext__()
+                else:
+                    await first
+            with pytest.raises(ProtocolError):
+                await reply
+            assert client.closed
+    with FakeServer(script) as server:
+        asyncio.run(main(server.path))
+
+
+@pytest.mark.parametrize("cut", [5, 14])
+def test_truncated_eof_is_protocol_error(cut: int) -> None:
+    from ark_voice import KIND_JSON, ProtocolError, encode_frame
+    def script(peer: Peer) -> None:
+        peer.handshake()
+        request = peer.expect("status")
+        peer.send_raw(encode_frame(KIND_JSON, request, b'{"event":"status"}')[:cut])
+    async def main(path: str) -> None:
+        async with await AsyncClient.connect(path) as client:
+            with pytest.raises(ProtocolError) as caught:
+                await client.status()
+            assert caught.value.reason == "truncated"
+    with FakeServer(script) as server:
+        asyncio.run(main(server.path))
+
+
+def test_bounded_writer_cancellation_and_abort_close() -> None:
+    # Deterministic backpressure at drain, including cancellation during upload.
+    from ark_voice import FrameDecoder, KIND_JSON
+    import json
+    class Transport:
+        aborted = False
+        def abort(self) -> None:
+            self.aborted = True
+    class Writer:
+        def __init__(self) -> None:
+            self.transport = Transport()
+            self.gate = asyncio.Event()
+            self.blocked = asyncio.Event()
+            self.frames = []
+            self.decoder = FrameDecoder()
+            self.bytes = 0
+        def is_closing(self) -> bool:
+            return self.transport.aborted
+        def write(self, data: bytes) -> None:
+            self.bytes += len(data)
+            self.frames.extend(self.decoder.feed(data))
+        async def drain(self) -> None:
+            if self.frames[-1].kind == KIND_PCM:
+                self.blocked.set()
+                await self.gate.wait()
+        async def wait_closed(self) -> None:
+            assert self.transport.aborted
+    async def main() -> None:
+        reader = asyncio.StreamReader()
+        writer = Writer()
+        client = AsyncClient(reader, writer, "fake")
+        stream = client.transcribe(PCMAudio(bytes(32 * 1024 * 1024), 16000))
+        next_task = asyncio.create_task(stream.__anext__())
+        await writer.blocked.wait()
+        submitted = writer.bytes
+        assert submitted <= 262144 + 1024
+        reply = client.create_voice("v", PCMAudio(bytes(32 * 1024 * 1024), 16000))
+        task = asyncio.ensure_future(reply)
+        await asyncio.sleep(0)
+        assert writer.bytes == submitted
+        task.cancel()
+        next_task.cancel()
+        for cancelled in (task, next_task):
+            with pytest.raises(asyncio.CancelledError):
+                await cancelled
+        writer.gate.set()
+        for _ in range(20):
+            await asyncio.sleep(0)
+        messages = [json.loads(f.payload) for f in writer.frames if f.kind == KIND_JSON]
+        assert sum(m.get("op") == "cancel" for m in messages) == 2
+        # Shutdown also stops a writer suspended in drain, without a peer read.
+        writer.gate.clear()
+        writer.blocked.clear()
+        retained = client.transcribe(PCMAudio(bytes(1024 * 1024), 16000))
+        await writer.blocked.wait()
+        await asyncio.wait_for(client.close(), 0.5)
+        assert retained.finished
+        assert client._reader_task.done() and client._writer_task.done()
+        assert writer.transport.aborted
+    asyncio.run(main())
+
+
+@pytest.mark.parametrize("context_exit", [False, True])
+def test_close_aborts_a_real_blocked_socket(context_exit: bool) -> None:
+    import threading
+    release = threading.Event()
+    def script(peer: Peer) -> None:
+        peer.handshake()
+        peer.expect("stt")
+        assert release.wait(3)
+    async def main(path: str) -> None:
+        client = await AsyncClient.connect(path)
+        retained = client.transcribe(PCMAudio(bytes(32 * 1024 * 1024), 16000))
+        try:
+            for _ in range(100):
+                if client._writer.transport.get_write_buffer_size():
+                    break
+                await asyncio.sleep(0.001)
+            assert 0 < client._writer.transport.get_write_buffer_size() <= 524288
+            if context_exit:
+                await asyncio.wait_for(client.__aexit__(None, None, None), 0.5)
+            else:
+                await asyncio.wait_for(client.close(), 0.5)
+            assert client._reader_task.done() and client._writer_task.done()
+            assert retained.finished
+        finally:
+            release.set()
+            await client.close()
+    with FakeServer(script) as server:
+        asyncio.run(main(server.path))

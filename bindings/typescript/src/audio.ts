@@ -224,10 +224,20 @@ export function decodeWav(bytes: Uint8Array): PCMAudio {
       if (size < 16 || body + 16 > bytes.byteLength) throw new RangeError("WAV fmt chunk is too short.");
       let tag = view.getUint16(body, true);
       if (tag === WAVE_FORMAT_EXTENSIBLE) {
-        if (size < 40 || body + 26 > bytes.byteLength) {
+        if (size < 40 || body + size > bytes.byteLength) {
           throw new RangeError("WAVE_FORMAT_EXTENSIBLE fmt chunk is too short to carry a subformat.");
         }
-        tag = view.getUint16(body + 24, true);
+        const extensionSize = view.getUint16(body + 16, true);
+        if (extensionSize < 22 || 18 + extensionSize > size ||
+            view.getUint16(body + 18, true) !== view.getUint16(body + 14, true)) {
+          throw new RangeError("Invalid WAVE_FORMAT_EXTENSIBLE structure.");
+        }
+        const guid = bytes.subarray(body + 24, body + 40);
+        const tail = [0, 0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xaa, 0, 0x38, 0x9b, 0x71];
+        if ((guid[0] !== 1 && guid[0] !== 3) || !tail.every((byte, i) => guid[i + 1] === byte)) {
+          throw new RangeError("Unsupported WAVE_FORMAT_EXTENSIBLE subformat GUID.");
+        }
+        tag = guid[0]!;
       }
       fmt = {
         tag,

@@ -64,6 +64,59 @@ import Testing
     #expect(throws: WAVError.notWAV) { try PCMAudio(wavData: Data("hello".utf8)) }
   }
 
+  @Test func malformedFormatsAreRejected() throws {
+    for (channels, rate) in [(UInt16(0), UInt32(16_000)), (1, 0)] {
+      let wav = Self.wav(tag: 1, channels: channels, rate: rate, bits: 16, data: Data())
+      #expect(throws: WAVError.self) { try PCMAudio(wavData: wav) }
+    }
+    let partial = Self.wav(tag: 1, channels: 2, rate: 16_000, bits: 16, data: Data(count: 2))
+    #expect(throws: WAVError.self) { try PCMAudio(wavData: partial) }
+    for subformat in [UInt16(1), UInt16(3)] {
+      let bits: UInt16 = subformat == 1 ? 16 : 32
+      let canonical = Self.wav(tag: 0xFFFE, channels: 1, rate: 16_000, bits: bits,
+                               data: Data(count: Int(bits / 8)), subformat: subformat)
+      #expect(try PCMAudio(wavData: canonical).sampleCount == 1)
+      // LIST (12 bytes), fmt header (8), then its 40-byte body.
+      var altered = canonical
+      altered[12 + 12 + 8 + 39] ^= 1
+      #expect(throws: WAVError.self) { try PCMAudio(wavData: altered) }
+      for length in [26, 39] {
+        let truncated = Data(canonical.prefix(12 + 12 + 8 + length))
+        #expect(throws: WAVError.self) { try PCMAudio(wavData: truncated) }
+      }
+    }
+  }
+
+  @Test func formatMayFollowBoundedData() throws {
+    let audio = PCMAudio(samples: [0.5, -0.5], sampleRate: 16_000)
+    let original = audio.wavData
+    var reordered = Data(original.prefix(12))
+    reordered.append(original[36...])
+    reordered.append(original[12..<36])
+    #expect(try PCMAudio(wavData: reordered) == audio)
+  }
+
+  @Test func sharedWAVVectors() throws {
+    struct Vector: Decodable {
+      let name: String
+      let hex: String
+      let invalid: Bool?
+      let format: String?
+    }
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent()
+    let vectors = try JSONDecoder().decode([Vector].self, from: Data(contentsOf: root.appendingPathComponent("bindings/test-vectors/wav.json")))
+    for vector in vectors {
+      let hex = Array(vector.hex)
+      let data = Data(stride(from: 0, to: hex.count, by: 2).map { UInt8(String(hex[$0...$0 + 1]), radix: 16)! })
+      if vector.invalid == true {
+        #expect(throws: WAVError.self) { try PCMAudio(wavData: data) }
+      } else {
+        #expect(try PCMAudio(wavData: data).format.rawValue == vector.format, "\(vector.name)")
+      }
+    }
+  }
+
   /// Builds a WAV by hand, with an odd-sized chunk before `fmt ` to exercise
   /// chunk padding.
   static func wav(
@@ -81,7 +134,7 @@ import Testing
       fmt.appendLE(bits)
       fmt.appendLE(UInt32(0))
       fmt.appendLE(subformat)
-      fmt.append(Data(count: 14))
+      fmt.append(contentsOf: [0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xaa, 0, 0x38, 0x9b, 0x71])
     }
     var body = Data("WAVE".utf8)
     body.append(Data("LIST".utf8))

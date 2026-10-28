@@ -1,10 +1,16 @@
-@_exported import ArkVoiceClient
+import ArkVoiceClient
 import ArkVoiceKit
 import Foundation
 
-// The framing, protocol version, and operation, event, and error names live in
-// ArkVoiceClient so the server and its lightweight client share one definition.
-// They are re-exported so `import ArkVoiceServer` still sees them.
+// Preserve the server's wire API without exposing client-only functionality.
+public typealias Frame = ArkVoiceClient.Frame
+public typealias FrameHeader = ArkVoiceClient.FrameHeader
+public typealias FrameKind = ArkVoiceClient.FrameKind
+public typealias FrameError = ArkVoiceClient.FrameError
+public typealias ClientOperation = ArkVoiceClient.ClientOperation
+public typealias ServerEvent = ArkVoiceClient.ServerEvent
+public typealias ServerErrorCode = ArkVoiceClient.ServerErrorCode
+public let arkVoiceProtocolVersion = ArkVoiceClient.arkVoiceProtocolVersion
 
 /// Default socket path, beside the models the daemon serves.
 public func defaultSocketPath(modelRoot: URL = ModelStore.defaultRoot) -> String {

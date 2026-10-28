@@ -66,15 +66,12 @@ def _open_socket(path: str) -> socket.socket:
     return sock
 
 
-def upload_frames(request_id: int, audio: PCMAudio) -> list[bytes]:
-    """PCM frames of at most 256 KiB, then ``{"op":"end"}``."""
-    data = audio.data
-    frames = [
-        encode_frame(KIND_PCM, request_id, data[offset : offset + UPLOAD_CHUNK_SIZE])
-        for offset in range(0, len(data), UPLOAD_CHUNK_SIZE)
-    ]
-    frames.append(encode_frame(KIND_JSON, request_id, _END_UPLOAD))
-    return frames
+def upload_frames(request_id: int, audio: PCMAudio) -> Iterator[bytes]:
+    """Lazily encode PCM frames of at most 256 KiB, then ``{"op":"end"}``."""
+    data = memoryview(audio.data)
+    for offset in range(0, len(data), UPLOAD_CHUNK_SIZE):
+        yield encode_frame(KIND_PCM, request_id, data[offset : offset + UPLOAD_CHUNK_SIZE])
+    yield encode_frame(KIND_JSON, request_id, _END_UPLOAD)
 
 
 class _Stream(Generic[_T]):
@@ -394,10 +391,12 @@ class Client:
         with self._cond:
             self._reading = False
             try:
-                if failure is not None:
-                    self._lost_locked(failure)
-                    return
                 try:
+                    if failure is not None:
+                        if not data:
+                            self._decoder.finish()
+                        self._lost_locked(failure)
+                        return
                     for frame in self._decoder.feed(data):
                         if self._router.dispatch(frame):
                             self._shutdown_locked()

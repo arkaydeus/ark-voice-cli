@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { PCMAudio, decodeWav, encodeSamples, encodeWav } from "../src/index.js";
@@ -43,6 +43,7 @@ function buildWav(spec: WavSpec): Uint8Array {
     view.setUint16(16, 22, true);
     view.setUint16(18, spec.bits, true);
     view.setUint16(24, spec.subformat ?? 1, true);
+    fmt.set([0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xaa, 0, 0x38, 0x9b, 0x71], 26);
   }
   parts.push(chunk("fmt ", fmt));
   for (const extra of spec.extraChunks ?? []) parts.push(chunk(extra.id, extra.body));
@@ -202,4 +203,43 @@ describe("WAV", () => {
     expect(() => decodeWav(alaw)).toThrow(/format tag 6/);
     expect(() => decodeWav(new TextEncoder().encode("not a wav file at all"))).toThrow(/Not a WAV file/);
   });
+});
+
+
+test("extensible headers require complete canonical GUIDs and extension size", () => {
+  for (const subformat of [1, 3]) {
+    const bits = subformat === 1 ? 16 : 32;
+    const wav = buildWav({ tag: 0xfffe, subformat, channels: 1, sampleRate: 16000, bits, data: new Uint8Array(bits / 8) });
+    expect(decodeWav(wav).format).toBe(subformat === 1 ? "s16le" : "f32le");
+    const changed = wav.slice();
+    changed[20 + 39]! ^= 1;
+    expect(() => decodeWav(changed)).toThrow(/GUID/);
+    for (const length of [26, 39]) expect(() => decodeWav(wav.subarray(0, 20 + length))).toThrow(RangeError);
+    for (const size of [0, 23]) {
+      const bad = wav.slice();
+      new DataView(bad.buffer).setUint16(20 + 16, size, true);
+      expect(() => decodeWav(bad)).toThrow(RangeError);
+    }
+  }
+});
+
+test("fmt can follow bounded data", () => {
+  const audio = new PCMAudio(new Uint8Array(4), 16000);
+  const wav = audio.toWav();
+  const reordered = new Uint8Array(wav.length);
+  reordered.set(wav.subarray(0, 12));
+  reordered.set(wav.subarray(36), 12);
+  reordered.set(wav.subarray(12, 36), 12 + wav.length - 36);
+  expect(decodeWav(reordered).data).toEqual(audio.data);
+});
+
+
+test("shared WAV vectors", () => {
+  const vectors = JSON.parse(readFileSync(new URL("../../test-vectors/wav.json", import.meta.url), "utf8")) as
+    Array<{ name: string; hex: string; invalid?: boolean; format?: "s16le" | "f32le" }>;
+  for (const vector of vectors) {
+    const data = new Uint8Array(Buffer.from(vector.hex, "hex"));
+    if (vector.invalid) expect(() => decodeWav(data)).toThrow(RangeError);
+    else expect(decodeWav(data).format).toBe(vector.format!);
+  }
 });

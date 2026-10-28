@@ -132,3 +132,10 @@ def test_samples(vectors: dict[str, Any]) -> None:
     f32 = samples["f32le"]
     assert encode_samples(f32["floats"], "f32le").hex() == f32["hex"]
     assert decode_samples(bytes.fromhex(f32["hex"]), "f32le") == f32["floats"]
+
+
+@pytest.mark.parametrize("value", [None, True, {}, "1", float("nan"), float("inf"), 10 ** 500])
+def test_numeric_control_fields_are_validated(value: Any) -> None:
+    import json
+    with pytest.raises(ProtocolError):
+        decode_message(json.dumps({"event": "status", "uptimeSeconds": value}).encode())

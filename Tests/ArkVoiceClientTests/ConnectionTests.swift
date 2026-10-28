@@ -185,17 +185,93 @@ import Testing
       try peer.expect(cancel.requestID == tts.requestID)
       // Frames already in flight before the server saw the cancel.
       try peer.sendPCM(Data(count: 4), to: tts.requestID)
-      try peer.send(["event": "error", "code": "cancelled", "message": "cancelled"], to: tts.requestID)
+      try peer.send(["event": "done", "chunks": 1, "samples": 2, "seconds": 0], to: tts.requestID)
+      try peer.send(["event": "error", "code": "unknown-request"], to: tts.requestID)
 
       let status = try peer.read()
       try peer.expect(status.json?["op"] as? String == "status")
       try peer.send(["event": "status", "version": 1], to: status.requestID)
     }) { path in
       let client = try await ArkVoiceConnection.connect(socketPath: path)
-      for try await event in client.synthesize("a long story") {
+      let retained = client.synthesize("a long story")
+      defer { withExtendedLifetime(retained) {} }
+      for try await event in retained {
         if case .audio = event { break }
       }
       #expect(try await client.status().version == 1)
+      retained.cancel()  // remains idempotent after the iterator was dropped
+    }
+  }
+
+  @Test func cancellingASuspendedTaskSendsOneCancel() async throws {
+    try await withFakeServer({ peer in
+      try peer.handshake()
+      let tts = try peer.read()
+      let other = try peer.read()
+      let ready = try peer.read()
+      try peer.expect(ready.json?["op"] as? String == "status")
+      try peer.send(["event": "status", "version": 1], to: ready.requestID)
+      let cancel = try peer.read()
+      try peer.expect(cancel.json?["op"] as? String == "cancel")
+      try peer.expect(cancel.requestID == tts.requestID)
+      try peer.send(["event": "done"], to: tts.requestID)
+      try peer.send(["event": "error", "code": "unknown-request"], to: tts.requestID)
+      let status = try peer.read()
+      try peer.expect(status.json?["op"] as? String == "status")
+      try peer.send(["event": "status", "version": 1], to: status.requestID)
+      try peer.send(["event": "done"], to: other.requestID)
+    }) { path in
+      let client = try await ArkVoiceConnection.connect(socketPath: path)
+      let retained = client.synthesize("waiting")
+      let other = client.synthesize("also waiting")
+      let task = Task { for try await _ in retained {} }
+      _ = try await client.status()
+      task.cancel()
+      try await task.value
+      #expect(try await client.status().version == 1)
+      for try await _ in other {}
+      retained.cancel()
+      client.close()
+    }
+  }
+
+  @Test func droppingAnUnusedStreamCancelsAndDroppingTheConnectionCloses() async throws {
+    try await withFakeServer({ peer in
+      try peer.handshake()
+      let tts = try peer.read()
+      let cancel = try peer.read()
+      try peer.expect(cancel.json?["op"] as? String == "cancel")
+      try peer.expect(cancel.requestID == tts.requestID)
+      try peer.send(["event": "done"], to: tts.requestID)
+      let status = try peer.read()
+      try peer.expect(status.json?["op"] as? String == "status")
+      try peer.send(["event": "status", "version": 1], to: status.requestID)
+    }) { path in
+      var client: ArkVoiceConnection? = try await ArkVoiceConnection.connect(socketPath: path)
+      weak var reference = client
+      do { let unused = client!.synthesize("unused"); withExtendedLifetime(unused) {} }
+      #expect(try await client!.status().version == 1)
+      client = nil
+      #expect(reference == nil)
+    }
+  }
+
+  @Test func closingWhileUploadWritesAreQueuedFailsOnceAndReleasesTheSocket() async throws {
+    try await withFakeServer({ peer in
+      try peer.handshake()
+      let start = try peer.read()
+      try peer.send(["event": "partial", "text": "ready"], to: start.requestID)
+      // The client closes without waiting for this upload to be consumed.
+    }) { path in
+      let client = try await ArkVoiceConnection.connect(socketPath: path)
+      let stream = client.transcribe(PCMAudio(data: Data(count: 8 * 1024 * 1024), sampleRate: 16_000, format: .s16le))
+      var iterator = stream.makeAsyncIterator()
+      _ = try await iterator.next()
+      client.close()
+      client.close()
+      await #expect(throws: ArkVoiceClientError.connectionClosed) {
+        _ = try await iterator.next()
+      }
     }
   }
 

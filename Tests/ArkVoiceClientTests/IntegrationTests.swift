@@ -104,23 +104,40 @@ import ArkVoiceClient
       }
       #expect(try await client.status().version == arkVoiceProtocolVersion)
 
-      // Voice profiles. The server saves into the real ~/.ark-voice-cli/voices.
+      // Voice profiles live under this server's temporary root.
       let name = "bindings-test-swift-\(UUID().uuidString.prefix(8).lowercased())"
       let saved = try await client.createVoice(named: name, from: speech)
-      defer { Self.removeTestVoice(at: saved, named: name) }
       #expect(saved.hasSuffix("\(name).safetensors"))
       #expect(try await client.voices().contains(name))
     }
   }
 
-  private static func removeTestVoice(at path: String, named name: String) {
-    let voices = FileManager.default.homeDirectoryForCurrentUser
-      .appendingPathComponent(".ark-voice-cli/voices").standardizedFileURL.path
-    let url = URL(fileURLWithPath: path).standardizedFileURL
-    guard url.deletingLastPathComponent().path == voices,
-      url.deletingPathExtension().lastPathComponent == name
-    else { return }
-    try? FileManager.default.removeItem(at: url)
+  @Test(.enabled(if: binary != nil && modelsPresent), .timeLimit(.minutes(5)))
+  func profileRootIsRemovedAfterFailure() async throws {
+    struct InjectedFailure: Error {}
+    let voices = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ark-voice-cli/voices")
+    func snapshot() throws -> [String: Data] {
+      guard FileManager.default.fileExists(atPath: voices.path) else { return [:] }
+      return try Dictionary(uniqueKeysWithValues: FileManager.default.contentsOfDirectory(at: voices, includingPropertiesForKeys: nil)
+        .filter { !$0.hasDirectoryPath }.map { ($0.lastPathComponent, try Data(contentsOf: $0)) })
+    }
+    let before = try snapshot()
+    var directory: String?
+    do {
+      try await withServer { path in
+        directory = URL(fileURLWithPath: path).deletingLastPathComponent().path
+        let client = try await ArkVoiceConnection.connect(socketPath: path)
+        defer { client.close() }
+        let audio = try await client.synthesizeAudio("An isolated reference voice.").audio
+        let saved = try await client.createVoice(named: "failure-test", from: audio)
+        #expect(URL(fileURLWithPath: saved).deletingLastPathComponent().path == directory! + "/voices")
+        #expect(FileManager.default.fileExists(atPath: saved))
+        throw InjectedFailure()
+      }
+      Issue.record("expected injected failure")
+    } catch is InjectedFailure {}
+    #expect(directory != nil && !FileManager.default.fileExists(atPath: directory!))
+    #expect(try snapshot() == before)
   }
 
   private func withServer(_ body: (String) async throws -> Void) async throws {
@@ -128,12 +145,20 @@ import ArkVoiceClient
     // Under /tmp: socket paths are limited to 104 bytes.
     let directory = "/tmp/akc-\(UUID().uuidString.prefix(8))"
     try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(atPath: directory) }
+    defer {
+      do { try FileManager.default.removeItem(atPath: directory) }
+      catch { Issue.record(error, "failed to remove the temporary daemon root") }
+    }
     let path = directory + "/ark-voice.sock"
+    let models = FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent(".ark-voice-cli/mlx-audio").path
+    if FileManager.default.fileExists(atPath: models) {
+      try FileManager.default.createSymbolicLink(atPath: directory + "/mlx-audio", withDestinationPath: models)
+    }
 
     let server = Process()
     server.executableURL = URL(fileURLWithPath: binary)
-    server.arguments = ["serve", "--socket", path, "--idle-unload", "off"]
+    server.arguments = ["serve", "--model-root", directory, "--socket", path, "--idle-unload", "off"]
     server.standardOutput = FileHandle.nullDevice
     server.standardError = FileHandle.nullDevice
     try server.run()

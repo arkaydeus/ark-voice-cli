@@ -4,6 +4,12 @@ import Testing
 @testable import ArkVoiceCLI
 
 @Suite struct CommandTests {
+  @Test func serveAcceptsIsolatedModelRoot() throws {
+    #expect(try CLIParser.parse(["serve", "--model-root", "/tmp/models"])
+      == .serve(ServeOptions(modelRoot: "/tmp/models")))
+    assertParseError(["serve", "--model-root"], contains: "requires a path")
+  }
+
   @Test func topLevelCommandsAndAliases() throws {
     #expect(try CLIParser.parse([]) == .help)
     #expect(try CLIParser.parse(["--help"]) == .help)

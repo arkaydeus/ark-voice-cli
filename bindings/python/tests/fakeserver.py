@@ -8,6 +8,7 @@ re-raised by :meth:`FakeServer.__exit__` so they fail the test.
 from __future__ import annotations
 
 import os
+import json
 import shutil
 import socket
 import tempfile
@@ -20,7 +21,6 @@ from ark_voice import (
     KIND_PCM,
     Frame,
     FrameDecoder,
-    decode_message,
     encode_frame,
     encode_message,
 )
@@ -53,7 +53,7 @@ class Peer:
     def read_json(self) -> tuple[int, dict[str, Any]]:
         frame = self.read_frame()
         assert frame.kind == KIND_JSON, f"expected json, got pcm on {frame.request_id}"
-        return frame.request_id, decode_message(frame.payload)
+        return frame.request_id, json.loads(frame.payload)
 
     def expect(self, op: str) -> int:
         request_id, message = self.read_json()
@@ -72,7 +72,7 @@ class Peer:
     def handshake(self, version: int = 1, sample_rate: int = 24000) -> int:
         frame = self.read_frame()
         assert frame.kind == KIND_JSON
-        assert decode_message(frame.payload) == {"op": "hello", "version": 1}
+        assert json.loads(frame.payload) == {"op": "hello", "version": 1}
         self.send_json(frame.request_id, {"event": "hello-ok", "version": version, "sampleRate": sample_rate})
         return frame.request_id
 

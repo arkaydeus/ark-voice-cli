@@ -142,7 +142,7 @@ public final class ArkVoiceConnection: Sendable {
     _ text: String,
     voice: String? = nil,
     format: SampleFormat = .s16le
-  ) -> AsyncThrowingStream<SynthesisEvent, any Error> {
+  ) -> RequestStream<SynthesisEvent> {
     var request = WireRequest(.tts)
     request.text = text
     request.voice = voice
@@ -194,7 +194,7 @@ public final class ArkVoiceConnection: Sendable {
   public func transcribe(
     _ audio: PCMAudio,
     model: STTModel? = nil
-  ) -> AsyncThrowingStream<TranscriptionEvent, any Error> {
+  ) -> RequestStream<TranscriptionEvent> {
     var request = WireRequest(.stt)
     request.format = audio.format
     request.sampleRate = audio.sampleRate
@@ -214,7 +214,7 @@ public final class ArkVoiceConnection: Sendable {
   public func transcribe(
     fileAt url: URL,
     model: STTModel? = nil
-  ) throws -> AsyncThrowingStream<TranscriptionEvent, any Error> {
+  ) throws -> RequestStream<TranscriptionEvent> {
     transcribe(try PCMAudio(contentsOfWAV: url), model: model)
   }
 

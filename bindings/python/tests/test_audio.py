@@ -114,3 +114,40 @@ def test_unsupported_wav_names_supported_encodings() -> None:
 def test_encode_wav_is_mono_fmt16() -> None:
     wav = encode_wav(PCMAudio(b"", 24000, "f32le"))
     assert len(wav) == 44 and struct.unpack_from("<HH", wav, 20) == (3, 1)
+
+
+@pytest.mark.parametrize("tag,bits", [(1, 16), (3, 32)])
+def test_extensible_guid_and_header_validation(tag: int, bits: int) -> None:
+    guid = bytes([tag]) + bytes.fromhex("00000000001000800000aa00389b71")
+    fmt = struct.pack("<HHIIHHHHI", 0xFFFE, 1, 16000, 16000 * bits // 8,
+                      bits // 8, bits, 22, bits, 0) + guid
+    data = bytes(bits // 8)
+    assert decode_wav(_wav(fmt, data)).format == ("s16le" if tag == 1 else "f32le")
+    changed = fmt[:-1] + bytes([fmt[-1] ^ 1])
+    with pytest.raises(ValueError, match="GUID"):
+        decode_wav(_wav(changed, data))
+    for length in (26, 39):
+        with pytest.raises(ValueError):
+            decode_wav(_wav(fmt[:length], data))
+    for extension_size in (0, 23):
+        changed = fmt[:16] + struct.pack("<H", extension_size) + fmt[18:]
+        with pytest.raises(ValueError):
+            decode_wav(_wav(changed, data))
+
+
+def test_format_can_follow_data() -> None:
+    audio = PCMAudio(bytes(4), 16000)
+    canonical = audio.to_wav()
+    assert decode_wav(canonical[:12] + canonical[36:] + canonical[12:36]) == audio
+
+
+def test_shared_wav_vectors() -> None:
+    import json
+    fixtures = Path(__file__).resolve().parents[2] / "test-vectors" / "wav.json"
+    for vector in json.loads(fixtures.read_text()):
+        data = bytes.fromhex(vector["hex"])
+        if vector.get("invalid"):
+            with pytest.raises(ValueError):
+                decode_wav(data)
+        else:
+            assert decode_wav(data).format == vector["format"], vector["name"]

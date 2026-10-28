@@ -7,6 +7,7 @@ import signal
 import socket
 import subprocess
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -60,16 +61,28 @@ def server_socket() -> Iterator[str]:
     if not os.access(binary, os.X_OK):
         pytest.skip(f"ark-voice binary from {source} is not executable: {binary}")
 
+    with running_server(binary) as path:
+        yield path
+
+
+@contextmanager
+def running_server(binary: str) -> Iterator[str]:
+    """A disposable daemon root; only model files are shared with the user."""
     directory = socket_dir()
-    path = os.path.join(directory, "ark-voice.sock")
-    log_path = os.path.join(directory, "server.log")
-    log = open(log_path, "wb")
-    process = subprocess.Popen(
-        [binary, "serve", "--socket", path, "--idle-unload", "off"],
-        stdout=log,
-        stderr=subprocess.STDOUT,
-    )
+    process = None
+    log = None
     try:
+        path = os.path.join(directory, "ark-voice.sock")
+        models = Path.home() / ".ark-voice-cli" / "mlx-audio"
+        if models.exists():
+            (Path(directory) / "mlx-audio").symlink_to(models, target_is_directory=True)
+        log_path = os.path.join(directory, "server.log")
+        log = open(log_path, "wb")
+        process = subprocess.Popen(
+            [binary, "serve", "--model-root", directory, "--socket", path, "--idle-unload", "off"],
+            stdout=log,
+            stderr=subprocess.STDOUT,
+        )
         deadline = time.monotonic() + 15
         while not (os.path.exists(path) and _connectable(path)):
             if process.poll() is not None or time.monotonic() > deadline:
@@ -80,12 +93,13 @@ def server_socket() -> Iterator[str]:
             time.sleep(0.05)
         yield path
     finally:
-        if process.poll() is None:
+        if process is not None and process.poll() is None:
             process.send_signal(signal.SIGTERM)
             try:
                 process.wait(15)
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
-        log.close()
-        shutil.rmtree(directory, ignore_errors=True)
+        if log is not None:
+            log.close()
+        shutil.rmtree(directory)

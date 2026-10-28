@@ -187,5 +187,5 @@ fake server. The integration tests start a real `ark-voice serve` on a
 temporary socket. They use `$ARK_VOICE_BINARY`, else
 `<repo>/.build/release/ark-voice`, and skip if neither exists. Tests that
 need models skip on `ModelsMissingError`. A test voice
-(`bindings-test-python-*`) is created in `~/.ark-voice-cli/voices` and
+(`bindings-test-python-*`) is created in the daemon's temporary `--model-root` and
 deleted again.
