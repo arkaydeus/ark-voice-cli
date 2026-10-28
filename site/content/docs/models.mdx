@@ -1,0 +1,62 @@
+Models are not part of the executable. They download only when you run `ark-voice download`, and
+are stored under `~/.ark-voice-cli`. The optional recognizers download only when you name them.
+
+## What ark-voice uses
+
+| Model                                    | Role                                                       | Runtime |
+| ---------------------------------------- | ---------------------------------------------------------- | ------- |
+| `sonic-speech/parakeet-tdt-0.6b-v2-int8` | English speech recognition, the default                    | MLX     |
+| `FluidInference/parakeet-ultra-coreml`   | Multilingual recognition, optional                         | Core ML |
+| `mlx-community/Qwen3-ASR-1.7B-8bit`      | Multilingual recognition, optional                         | MLX     |
+| `mlx-community/chatterbox-turbo-6bit`    | English speech synthesis                                   | MLX     |
+| `mlx-community/S3TokenizerV2`            | Speech tokenizer, required by Chatterbox and voice cloning | MLX     |
+
+## Downloading
+
+```sh
+ark-voice download                 # default recognizer, Chatterbox and its tokenizer
+ark-voice download stt             # recognition only
+ark-voice download tts             # synthesis only, including the tokenizer
+ark-voice download parakeet-ultra  # an optional recognizer, by name
+ark-voice download qwen
+```
+
+The full set of selections is `all`, `stt`, `tts`, `parakeet`, `parakeet-ultra` and `qwen`. With
+no argument, `download` means `all`.
+
+Set `HF_TOKEN` if Hugging Face requires authentication in your environment.
+
+## How downloads are verified
+
+- Each model is pinned to a reviewed Hugging Face commit revision, so an upstream change cannot
+  alter what you get.
+- Required files and sizes are validated, and model-weight SHA-256 checksums are verified.
+- A completed snapshot is activated atomically. An interrupted download can never be mistaken for a
+  usable model.
+
+Running `download` again skips files that are already present.
+
+## Checking status
+
+```sh
+ark-voice models
+```
+
+Prints each configured model, where it lives, and whether it has been downloaded.
+
+## Parakeet Ultra and Core ML compilation
+
+Parakeet Ultra has to be compiled for the Neural Engine before its first use, which takes about ten
+seconds. `ark-voice download parakeet-ultra` does that straight after downloading, so the first
+transcription starts at once.
+
+Core ML keeps the compiled form per macOS version. After a macOS update, run the download command
+again (it skips the files it already has), or let the first transcription pay the cost.
+
+A host app that links `ArkVoiceKit` has its own Core ML cache, and should call
+`preloadTranscriptionModel(.parakeetUltra)` once after installing the model.
+
+## Isolating a model root
+
+`ark-voice serve --model-root /path/to/root` keeps models, voice profiles and the default socket
+under that root instead of `~/.ark-voice-cli`.

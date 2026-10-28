@@ -1,0 +1,55 @@
+A voice profile stores the speaker conditioning that Chatterbox derives from a reference recording.
+Future generations use it directly, without decoding or processing the recording again.
+
+<Callout type="warning">Only clone voices you have permission to use.</Callout>
+
+## Create a profile
+
+```sh
+ark-voice voice create narrator speaker.m4a
+```
+
+On success, the saved profile path is the only thing written to stdout. Names may contain letters,
+numbers, hyphens and underscores. Creating a profile never overwrites an existing voice with the
+same name.
+
+## Use a profile
+
+```sh
+ark-voice tts --voice narrator --file article.txt -o narrated.wav
+```
+
+## List profiles
+
+```sh
+ark-voice voices
+```
+
+## Where profiles live
+
+Profiles are stored as safetensors files under `~/.ark-voice-cli/voices`, or under the model root
+given to `ark-voice serve --model-root`.
+
+A profile contains speaker-conditioning data derived from the recording. Protect it, and share it,
+as carefully as the original voice sample.
+
+## One-off cloning
+
+To clone a voice once without saving it, pass the recording directly:
+
+```sh
+ark-voice tts "This uses the reference voice" --reference speaker.m4a -o cloned.wav
+```
+
+## Through the server
+
+The server speaks saved voices only. `ark-voice client tts --reference` is refused; create a
+profile first and pass `--voice`:
+
+```sh
+ark-voice client tts "From the server" --voice narrator -o served.wav
+ark-voice client voices
+```
+
+The client libraries can create profiles over the socket too, with the `create-voice` operation;
+see the [protocol](/docs/protocol#voice-profiles).

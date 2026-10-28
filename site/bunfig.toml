@@ -1,0 +1,6 @@
+[install]
+# Turbopack cannot resolve peer dependencies through the isolated node_modules/.bun layout.
+linker = "hoisted"
+
+# `bun fmt` uses Prettier-compatible defaults; options go here.
+[fmt]

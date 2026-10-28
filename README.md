@@ -331,6 +331,11 @@ call `stream.cancel()` to stop an unused or manually retained iterator.
 - Successful voice creation writes only the saved profile path to stdout.
 - Set `HF_TOKEN` if Hugging Face requires authentication in your environment.
 
+## Documentation site
+
+`site/` holds the landing page and documentation, built with Next.js and Bun. With
+[mise](https://mise.jdx.dev) installed, run `mise run site:dev`; see [`site/README.md`](site/README.md).
+
 ## Tests
 
 Run the model-independent test suite with:

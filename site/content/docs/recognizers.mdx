@@ -1,0 +1,56 @@
+`stt` uses Parakeet v2 unless `--model` names another. The optional recognizers are downloaded by
+name.
+
+```sh
+ark-voice download parakeet-ultra
+ark-voice stt interview.m4a --model parakeet-ultra
+
+ark-voice download qwen
+ark-voice stt podcast.m4a -m qwen --stream
+```
+
+## Comparison
+
+| `--model`            | Runtime                | Languages                    | Download | Peak memory, 8 min of audio | Streams partial text                  |
+| -------------------- | ---------------------- | ---------------------------- | -------- | --------------------------- | ------------------------------------- |
+| `parakeet` (default) | MLX, GPU               | English                      | 0.7 GB   | ~1.2 GB                     | yes                                   |
+| `parakeet-ultra`     | Core ML, Neural Engine | 25 European                  | 0.6 GB   | ~0.1 GB                     | no: the transcript arrives at the end |
+| `qwen`               | MLX, GPU               | 30, plus 22 Chinese dialects | 2.5 GB   | ~4.5 GB                     | yes                                   |
+
+Parakeet Ultra and Qwen3-ASR detect the spoken language themselves. There is no
+language-selection option.
+
+## Speed and accuracy
+
+Measured on an M5 Max against LibriSpeech read English (32 minutes of audio):
+
+| Model            | Speed                | Word error rate |
+| ---------------- | -------------------- | --------------- |
+| `parakeet-ultra` | about 175× real time | 4.2%            |
+| `qwen`           | about 50× real time  | 3.8%            |
+
+## Which to pick
+
+- **English, as fast as possible:** `parakeet`, the default.
+- **European languages, or very little memory:** `parakeet-ultra`. It runs on the Neural Engine,
+  leaving the GPU free, but produces its text all at once.
+- **Broadest language coverage, including Chinese dialects:** `qwen`, at the cost of a 2.5 GB
+  download and more memory.
+
+## First use of Parakeet Ultra
+
+Parakeet Ultra is compiled for the Neural Engine before first use, which takes about ten seconds.
+`ark-voice download parakeet-ultra` does it straight after downloading. Core ML keeps the compiled
+form per macOS version, so after an update run the download command again or let the first
+transcription pay the cost.
+
+## With the server
+
+`ark-voice serve --stt-model <name>` sets the recognizer for requests that do not name one. The
+server keeps one recognizer resident and swaps it when a request asks for another. In the Swift
+library, asking a session for a different recognizer releases the current one first.
+
+## Notes
+
+Qwen3-ASR decodes one token at a time, so a partial can split a multi-byte character in non-Latin
+scripts. The final transcript is always decoded whole.

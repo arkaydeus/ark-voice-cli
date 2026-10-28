@@ -1,0 +1,74 @@
+You need an Apple Silicon Mac on macOS 14 or newer, Swift 6.2 or newer, and the Xcode Command
+Line Tools. Models are downloaded once, on request; after that, nothing leaves your Mac.
+
+## 1. Build ark-voice
+
+```sh
+git clone https://github.com/arkaydeus/ark-voice-cli
+cd ark-voice-cli
+./Scripts/build-release.sh
+```
+
+The script produces two files that must stay side by side:
+
+```text
+.build/release/ark-voice
+.build/release/mlx.metallib
+```
+
+See [Installation](/docs/installation) to put `ark-voice` on your `PATH`, and for why a plain
+`swift build` is not enough.
+
+## 2. Download the models
+
+```sh
+ark-voice download
+```
+
+This fetches the default recognizer (Parakeet v2), the Chatterbox speech model, and the tokenizer
+Chatterbox needs, into `~/.ark-voice-cli`. Use `ark-voice download stt` or
+`ark-voice download tts` to fetch only one side. [Models and downloads](/docs/models) covers what is
+fetched and how it is verified.
+
+## 3. Transcribe a recording
+
+```sh
+ark-voice stt recording.wav
+ark-voice stt voice-note.m4a --output transcript.txt
+```
+
+WAV, AAC, M4A and MP4 input all work. Add `--stream` to print text as it is recognized rather
+than waiting for the whole transcript.
+
+## 4. Speak some text
+
+```sh
+ark-voice tts "Hello from my Mac" --output hello.wav
+```
+
+The extension picks the format: `.wav` (the default), `.m4a`, or `.aac`. To hear audio as soon as
+the first chunk is generated, send it to stdout:
+
+```sh
+ark-voice tts "Hello from my Mac" -o - | ffplay -autoexit -nodisp -
+```
+
+## 5. Keep the models loaded
+
+Every `ark-voice tts` or `stt` call loads about a gigabyte of weights. If you call it repeatedly,
+start the server once and use `ark-voice client` instead:
+
+```sh
+ark-voice serve &
+ark-voice client tts "No reload for this one" -o quick.wav
+```
+
+A short utterance drops from about 5.9 seconds to about 0.24 seconds. See
+[Running the server](/docs/server).
+
+## Where next
+
+- [Streaming and pipes](/docs/streaming) for stdin and stdout audio
+- [Voice profiles](/docs/voice-profiles) to clone a voice and reuse it
+- [Choosing a recognizer](/docs/recognizers) for languages other than English
+- [Swift library](/docs/swift-library) to run the models inside your own app

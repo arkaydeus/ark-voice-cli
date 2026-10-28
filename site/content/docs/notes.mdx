@@ -1,0 +1,46 @@
+## Languages
+
+- Speech synthesis is English only.
+- Recognition is English with the default model. Parakeet Ultra (25 European languages) and
+  Qwen3-ASR (30 languages plus 22 Chinese dialects) detect the language themselves. There is no
+  language-selection option.
+- Qwen3-ASR decodes one token at a time, so a partial can split a multi-byte character in non-Latin
+  scripts. The final transcript is always decoded whole.
+
+## Audio input
+
+- Input decoding uses AVFoundation. MP4 files must contain an audio track.
+- Container audio on stdin is detected from its leading bytes. Headerless PCM needs
+  `--input-format`.
+- Live microphone transcription is not supported: the recognizer needs the whole recording before
+  it starts.
+
+## Audio output
+
+- TTS output can be Float32 WAV, AAC-LC in M4A, or ADTS AAC. All are mono at Chatterbox's native
+  24 kHz; WAV is the default.
+- A WAV streamed to stdout declares an unknown length. Players and ffmpeg read until the stream
+  ends.
+
+## stdout and stderr
+
+- Successful TTS writes only the output audio path to stdout, or the audio itself with
+  `--output -`.
+- Successful voice creation writes only the saved profile path to stdout.
+- Model progress and diagnostics always go to stderr.
+- With `stt --stream -o transcript.txt`, incremental text goes to stderr, and the final transcript
+  is installed atomically at the requested path.
+
+## Models and storage
+
+- Models, voice profiles and the default socket live under `~/.ark-voice-cli`, or under
+  `--model-root` for the server.
+- Set `HF_TOKEN` if Hugging Face requires authentication in your environment.
+- After a macOS update, Parakeet Ultra's Core ML compilation is redone on first use, or ahead of
+  time by running `ark-voice download parakeet-ultra` again.
+
+## Privacy
+
+Recognition and synthesis run entirely on your Mac. The network is used only to download models,
+and only when you run `ark-voice download`. Voice profiles hold speaker-conditioning data derived
+from a recording, so treat them as carefully as the recording itself.

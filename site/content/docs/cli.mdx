@@ -1,0 +1,106 @@
+```text
+ark-voice download [all|stt|tts|parakeet|parakeet-ultra|qwen]
+ark-voice stt <audio|-> [--output transcript.txt] [--stream] [--model name]
+ark-voice tts [--] <text> [--output speech.{wav,m4a,aac}|-] [--reference voice.wav|--voice name]
+ark-voice tts --file <text-file|-> [--output speech.{wav,m4a,aac}|-]
+ark-voice voice create <name> <reference-audio>
+ark-voice voices
+ark-voice models
+ark-voice serve [--model-root path] [--socket path] [--idle-unload seconds|off] [--idle-exit seconds|off] [--stt-model name]
+ark-voice client <tts|stt|voices|status|unload> [--socket path] ...
+ark-voice help
+ark-voice --version
+```
+
+A usage error exits with status 2 and prints the usage text to stderr. Any other failure exits with
+status 1.
+
+## download
+
+```sh
+ark-voice download [selection]
+```
+
+Downloads models to `~/.ark-voice-cli`. The selection is `all` (the default: Parakeet v2,
+Chatterbox and its tokenizer), `stt`, `tts`, `parakeet`, `parakeet-ultra` or `qwen`. See
+[Models and downloads](/docs/models).
+
+## stt
+
+Alias: `transcribe`.
+
+| Option                  | Meaning                                                      |
+| ----------------------- | ------------------------------------------------------------ |
+| `<audio>` or `-`        | WAV, AAC, M4A or MP4 file, or `-` for stdin                  |
+| `-o`, `--output <path>` | Write the transcript to a file instead of stdout             |
+| `--stream`              | Print partial text to stdout, or to stderr when `-o` is used |
+| `-m`, `--model <name>`  | `parakeet` (default), `parakeet-ultra` or `qwen`             |
+| `--input-format <fmt>`  | Headerless PCM on stdin: `f32le` or `s16le`                  |
+| `--input-rate <hz>`     | Sample rate of headerless PCM on stdin (default 16000)       |
+
+## tts
+
+Alias: `speak`.
+
+| Option                      | Meaning                                                                |
+| --------------------------- | ---------------------------------------------------------------------- |
+| `<text>`                    | Text to speak. Put `--` first if it starts with a hyphen               |
+| `-f`, `--file <path>`       | Read UTF-8 text from a file, or `-` for stdin                          |
+| `-o`, `--output <path>`     | `.wav`, `.m4a` or `.aac` file, or `-` for stdout. Default `speech.wav` |
+| `-r`, `--reference <audio>` | Clone the voice in this recording                                      |
+| `-v`, `--voice <name>`      | Use a saved voice profile                                              |
+| `--raw`                     | With `--output -`, omit the WAV header                                 |
+| `--format <fmt>`            | With `--output -`, `f32le` (default) or `s16le`                        |
+
+## voice create
+
+```sh
+ark-voice voice create <name> <reference-audio>
+```
+
+Saves a voice profile. Writes the profile path to stdout. Never overwrites an existing profile.
+
+## voices
+
+Lists saved voice profiles.
+
+## models
+
+Shows the configured models and their local download status.
+
+## serve
+
+| Option                             | Meaning                                                        |
+| ---------------------------------- | -------------------------------------------------------------- |
+| `-s`, `--socket <path>`            | Socket path. Default `~/.ark-voice-cli/ark-voice.sock`         |
+| `--model-root <path>`              | Root for models, voices and the default socket                 |
+| `--idle-unload <seconds>` or `off` | Release models when idle. Default 300                          |
+| `--idle-exit <seconds>` or `off`   | Exit when idle. Default off                                    |
+| `--stt-model <name>`               | Recognizer for requests that do not name one                   |
+| `--foreground`                     | Accepted and ignored; the server always runs in the foreground |
+
+## client
+
+```sh
+ark-voice client tts <text> [tts options] [--socket path]
+ark-voice client stt <audio|-> [stt options] [--socket path]
+ark-voice client voices [--socket path]
+ark-voice client status [--socket path]
+ark-voice client unload [--socket path]
+```
+
+`client tts` and `client stt` take the same options as `tts` and `stt`, except that `client tts`
+does not accept `--reference`: the server speaks saved voices only. `-s` is short for `--socket`.
+
+## Environment
+
+| Variable           | Meaning                                                            |
+| ------------------ | ------------------------------------------------------------------ |
+| `HF_TOKEN`         | Hugging Face token, if your environment requires one for downloads |
+| `ARK_VOICE_SOCKET` | Default socket path for the client bindings                        |
+
+## Output channels
+
+- Successful `tts` writes only the output path to stdout, or the audio itself with `--output -`.
+- Successful `voice create` writes only the saved profile path to stdout.
+- Model progress and diagnostics always go to stderr.

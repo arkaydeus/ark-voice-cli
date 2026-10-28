@@ -1,0 +1,79 @@
+`ark-voice tts` (alias `speak`) generates English speech with Chatterbox Turbo, using its included
+default voice unless you pass a reference recording or a saved voice.
+
+## Speak inline text
+
+```sh
+ark-voice tts "Hello from my Mac" --output hello.wav
+```
+
+Without `--output`, audio is written to `speech.wav`. On success, the output path is the only thing
+written to stdout; model progress and diagnostics go to stderr.
+
+Use `--` before text that starts with a hyphen:
+
+```sh
+ark-voice tts -- "-5 degrees outside" -o weather.wav
+```
+
+Quote multi-word text as a single argument.
+
+## Output formats
+
+The extension of `--output` selects the format:
+
+| Extension | Format                         |
+| --------- | ------------------------------ |
+| `.wav`    | 32-bit float WAV (the default) |
+| `.m4a`    | AAC-LC in an M4A container     |
+| `.aac`    | ADTS-framed AAC                |
+
+```sh
+ark-voice tts "Hello from my Mac" --output hello.m4a
+ark-voice tts "Hello from my Mac" --output hello.aac
+```
+
+All formats are mono at Chatterbox's native 24 kHz. Both AAC forms use a 48 kbps target bitrate.
+
+To stream audio to another program instead of a file, use `--output -`; see
+[Streaming and pipes](/docs/streaming).
+
+## Read text from a file or stdin
+
+```sh
+ark-voice tts --file article.txt -o article.wav
+printf 'Hello there' | ark-voice tts --file - -o hello.wav
+```
+
+`--file` takes a UTF-8 text file, or `-` for stdin. Pass either inline text or `--file`, not both.
+
+## Long text
+
+Long text is split automatically at sentence or word boundaries into chunks of at most 300
+characters. Chunks are synthesized in sequence and joined with a short pause.
+
+## Clone a voice
+
+```sh
+ark-voice tts "This uses the reference voice" \
+  --reference speaker.m4a \
+  --output cloned.wav
+```
+
+`--reference` does zero-shot voice cloning from a recording. If you will use the same voice again,
+save it as a [voice profile](/docs/voice-profiles) and pass `--voice` instead, so the recording is
+not processed every time. Pass either `--reference` or `--voice`, not both.
+
+<Callout type="warning">Only clone voices you have permission to use.</Callout>
+
+## Options
+
+| Option                      | Meaning                                                                 |
+| --------------------------- | ----------------------------------------------------------------------- |
+| `<text>`                    | Text to speak; put `--` first if it starts with a hyphen                |
+| `-f`, `--file <path>`       | Read text from a UTF-8 file, or `-` for stdin                           |
+| `-o`, `--output <path>`     | `.wav`, `.m4a` or `.aac` file, or `-` for stdout (default `speech.wav`) |
+| `-r`, `--reference <audio>` | Clone the voice in this recording                                       |
+| `-v`, `--voice <name>`      | Use a saved voice profile                                               |
+| `--raw`                     | With `--output -`, omit the WAV header                                  |
+| `--format <fmt>`            | With `--output -`, `f32le` (default) or `s16le` samples                 |
