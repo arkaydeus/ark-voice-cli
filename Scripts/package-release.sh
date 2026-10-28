@@ -221,9 +221,17 @@ extracted="$verify_directory/$package_name"
 quarantine="0081;$(printf '%x' "$(date +%s)");ark-voice-release;"
 find "$extracted" -type f -exec xattr -w com.apple.quarantine "$quarantine" {} +
 
-codesign --verify --strict --verbose=2 "$extracted/ark-voice"
-codesign --verify --strict --check-notarization --verbose=2 "$extracted/ark-voice"
-spctl --assess --type execute --verbose=4 "$extracted/ark-voice"
+# `spctl --type execute` assesses app bundles and rejects any bare executable as
+# "not an app", so each Mach-O file is assessed as `--type install` instead,
+# which reports whether Gatekeeper accepts it as notarized Developer ID code.
+for code in "$extracted/ark-voice" "$extracted/$span_library_name"; do
+  [[ -f "$code" ]] || continue
+  codesign --verify --strict --check-notarization --verbose=2 "$code"
+  assessment="$(spctl --assess --type install --verbose=4 "$code" 2>&1)"
+  echo "$assessment"
+  grep -q "source=Notarized Developer ID" <<<"$assessment" \
+    || fail "Gatekeeper did not accept $code as notarized"
+done
 [[ "$("$extracted/ark-voice" --version)" == "ark-voice $version" ]] \
   || fail "the quarantined executable did not run"
 

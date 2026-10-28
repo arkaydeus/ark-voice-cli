@@ -392,8 +392,9 @@ The packaging script refuses to run on a dirty working tree. It builds the relea
 It runs the signed binary from a directory holding only the release files: `tts` to WAV and M4A,
 `stt` from a file and from stdin with every installed recognizer, and a `serve`/`client` round trip.
 It zips the files with `ditto`, submits the zip with `notarytool` and waits for the result, then
-verifies a quarantined copy of the zip's contents with `codesign --verify --strict` and `spctl`.
-The result is:
+verifies a quarantined copy of the zip's contents with `codesign --verify --strict` and
+`spctl --assess --type install`. (`spctl --type execute` only accepts app bundles and rejects any
+bare executable.) The result is:
 
 ```text
 dist/ark-voice-<version>-macos-arm64.zip
