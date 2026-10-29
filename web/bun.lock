@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "site",
+      "name": "ark-voice-web",
       "dependencies": {
         "@base-ui/react": "^1.9.0",
         "@mdx-js/loader": "^3.1.1",
