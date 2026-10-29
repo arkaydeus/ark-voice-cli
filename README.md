@@ -360,8 +360,8 @@ call `stream.cancel()` to stop an unused or manually retained iterator.
 
 ## Documentation site
 
-`site/` holds the landing page and documentation, built with Next.js and Bun. With
-[mise](https://mise.jdx.dev) installed, run `mise run site:dev`; see [`site/README.md`](site/README.md).
+`web/` holds the landing page and documentation, built with Next.js and Bun. With
+[mise](https://mise.jdx.dev) installed, run `mise run web:dev`; see [`web/README.md`](web/README.md).
 
 ## Tests
 
