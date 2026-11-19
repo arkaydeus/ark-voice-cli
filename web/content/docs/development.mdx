@@ -60,19 +60,19 @@ Any change to the protocol must update the vectors and all three clients togethe
 
 ## This documentation site
 
-The site lives in `site/`. It is a Next.js app styled with Tailwind CSS and shadcn/ui, and uses Bun
+The site lives in `web/`. It is a Next.js app styled with Tailwind CSS and shadcn/ui, and uses Bun
 as both package manager and runtime. Tasks run through [mise](https://mise.jdx.dev) from anywhere
 in the repository:
 
 ```sh
 mise install            # installs the pinned Bun
-mise run site:install   # bun install
-mise run site:dev       # http://localhost:3000
-mise run site:fmt       # bun fmt
-mise run site:check     # bun fmt --check, next typegen, bun check
-mise run site:test      # loader, heading, search and clipboard tests
-mise run site:build     # production build
+mise run web:install   # bun install
+mise run web:dev       # http://localhost:3000
+mise run web:fmt       # bun fmt
+mise run web:check     # bun fmt --check, next typegen, bun check
+mise run web:test      # loader, heading, search and clipboard tests
+mise run web:build     # production build
 ```
 
-Docs pages are MDX files in `site/content/docs`. The sidebar order, titles and descriptions are in
-`site/lib/docs.ts`; add a page there and create the matching `.mdx` file.
+Docs pages are MDX files in `web/content/docs`. The sidebar order, titles and descriptions are in
+`web/lib/docs.ts`; add a page there and create the matching `.mdx` file.
